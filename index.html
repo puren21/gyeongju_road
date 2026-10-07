@@ -9735,9 +9735,16 @@
         });
       }
 
+      function isRoadDatasetVisible(road) {
+        if (!road) return false;
+        if (road.layerId === "rural") return changedRoadDatasetVisible;
+        return true;
+      }
+
       function roadShouldBeVisibleNow(road, viewport) {
         return (
           LAYERS[road.layerId].visible &&
+          isRoadDatasetVisible(road) &&
           roadStatusFilters[road.statusKey] &&
           isRoadLayerVisibleAtScale(road.layerId) &&
           isRoadObjectKindVisible(road) &&
@@ -9787,6 +9794,16 @@
           ) return;
 
           visibleRoads.forEach(function(road) {
+            if (!isRoadDatasetVisible(road)) {
+              road._visible = false;
+              getRoadVisualLines(road)
+                .concat(road.hitLine ? [road.hitLine] : [])
+                .forEach(function(line) {
+                  if (line && line.getMap()) line.setMap(null);
+                });
+              return;
+            }
+
             if (road.hitLine && !road.hitLine.getMap()) {
               road.hitLine.setMap(map);
             }
@@ -9883,6 +9900,17 @@
               });
             }
           } else {
+            if (!isRoadDatasetVisible(road)) {
+              road._visible = false;
+              lines.forEach(function(line) {
+                if (line && line.getMap()) line.setMap(null);
+              });
+              if (road.hitLine && road.hitLine.getMap()) {
+                road.hitLine.setMap(null);
+              }
+              return;
+            }
+
             applyRoadNormalVisualStyle(road);
 
             lines.forEach(function(line, index) {
@@ -9945,6 +9973,10 @@
       function refreshMapAfterInteraction() {
         if (mapInteracting) return;
         document.body.classList.remove("map-interacting");
+
+        if (typeof enforceBaseRoadDatasetVisibility === "function") {
+          enforceBaseRoadDatasetVisibility();
+        }
 
         const wasWindowsDragFastMode = windowsDragFastMode;
         const wasWindowsZoomFastMode = windowsZoomFastMode;
@@ -12111,7 +12143,10 @@
 
         const stack = getRoadLayerStack(road.styleKey);
         const lines = getRoadVisualLines(road);
-        const roadVisible = !!road._visible && isRoadLayerVisibleAtScale(road.layerId);
+        const roadVisible =
+          !!road._visible &&
+          isRoadDatasetVisible(road) &&
+          isRoadLayerVisibleAtScale(road.layerId);
         const statusHidden = isRoadStatusHidden(road.statusKey);
         const isOff = hiddenRoadGroups.has(road.groupKey);
 
@@ -13903,7 +13938,7 @@
         allRoads.forEach(function(road) {
           const visible =
             LAYERS[road.layerId].visible &&
-            (road.layerId !== "rural" || changedRoadDatasetVisible) &&
+            isRoadDatasetVisible(road) &&
             roadStatusFilters[road.statusKey] &&
             isRoadLayerVisibleAtScale(road.layerId) &&
             isRoadObjectKindVisible(road) &&
@@ -13931,6 +13966,7 @@
           if (selected && !selected.roads.some(function(road) {
             return (
               LAYERS[road.layerId].visible &&
+              isRoadDatasetVisible(road) &&
               roadStatusFilters[road.statusKey] &&
               isRoadLayerVisibleAtScale(road.layerId) &&
               isRoadObjectKindVisible(road)
@@ -14510,11 +14546,19 @@
         updateRoadDatasetManagerStatus();
       }
 
+      function enforceBaseRoadDatasetVisibility() {
+        baseRoadDatasetShapes.forEach(function(line) {
+          const shouldShow = baseRoadDatasetVisible;
+          const isShown = !!line.getMap();
+          if (shouldShow !== isShown) {
+            line.setMap(shouldShow ? map : null);
+          }
+        });
+      }
+
       function setBaseRoadDatasetVisible(visible) {
         baseRoadDatasetVisible = !!visible;
-        baseRoadDatasetShapes.forEach(function(line) {
-          line.setMap(baseRoadDatasetVisible ? map : null);
-        });
+        enforceBaseRoadDatasetVisibility();
         try {
           localStorage.setItem(
             "gyeongjuBaseRoadVisible",
@@ -14526,14 +14570,63 @@
 
       function setChangedRoadDatasetVisible(visible) {
         changedRoadDatasetVisible = !!visible;
+
         try {
           localStorage.setItem(
             "gyeongjuChangedRoadVisible",
             changedRoadDatasetVisible ? "1" : "0"
           );
         } catch (e) {}
-        applyRoadVisibility();
-        updateLabels();
+
+        // 체크를 끈 즉시 모든 변경 도로구간을 지도에서 제거함.
+        // 확대/축소 중 applyRoadVisibility가 지연되더라도 다시 나타나지 않게
+        // _visible 캐시까지 함께 false로 고정함.
+        if (!changedRoadDatasetVisible) {
+          allRoads.forEach(function(road) {
+            if (road.layerId !== "rural") return;
+
+            road._visible = false;
+            road._visualTier = null;
+
+            getRoadVisualLines(road)
+              .concat(road.hitLine ? [road.hitLine] : [])
+              .forEach(function(line) {
+                if (line && line.getMap()) line.setMap(null);
+              });
+          });
+
+          (LAYERS.rural.labels || []).forEach(function(labelItem) {
+            if (labelItem.overlay && labelItem.overlay.getMap()) {
+              labelItem.overlay.setMap(null);
+            }
+            labelItem._visible = false;
+          });
+
+          if (
+            selectedRoadGroupKey &&
+            groups.get(selectedRoadGroupKey) &&
+            groups.get(selectedRoadGroupKey).layerId === "rural"
+          ) {
+            removeSelectedRouteBalloon();
+          }
+        } else {
+          // 다시 켤 때는 캐시를 무효화하고 현재 축척/화면 기준으로 재계산.
+          allRoads.forEach(function(road) {
+            if (road.layerId === "rural") {
+              road._visible = false;
+              road._visualTier = null;
+            }
+          });
+        }
+
+        if (!mapInteracting && !windowsZoomFastMode && !windowsDragFastMode) {
+          applyRoadVisibility();
+          updateLabels();
+        } else {
+          // 지도 조작 종료 후 정상 복원되도록 새 refresh를 예약.
+          scheduleMapRefresh();
+        }
+
         updateRoadDatasetManagerStatus();
       }
 
@@ -15098,6 +15191,17 @@
 
       function restoreRoad(road) {
         if (!road) return;
+
+        if (!isRoadDatasetVisible(road)) {
+          road._visible = false;
+          getRoadVisualLines(road)
+            .concat(road.hitLine ? [road.hitLine] : [])
+            .forEach(function(line) {
+              if (line && line.getMap()) line.setMap(null);
+            });
+          return;
+        }
+
 
         // 클릭 선택된 노선은 mouseout/일반 갱신으로 원래 스타일로 덮어쓰지 않음.
         if (selectedRoadGroupKey && road.groupKey === selectedRoadGroupKey) {
@@ -15966,6 +16070,20 @@
               selectedRoadPopupState && selectedRoadPopupState.anchorPosition
             );
           }
+        }
+
+        if (group.layerId === "rural" && !changedRoadDatasetVisible) {
+          group.roads.forEach(function(road) {
+            if (!road) return;
+            road._visible = false;
+            getRoadVisualLines(road)
+              .concat(road.hitLine ? [road.hitLine] : [])
+              .forEach(function(line) {
+                if (line && line.getMap()) line.setMap(null);
+              });
+          });
+          removeSelectedRouteBalloon();
+          return;
         }
 
         if (hiddenRoadGroups.has(groupKey)) {
