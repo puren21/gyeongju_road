@@ -8149,6 +8149,43 @@
     }
   }
 
+
+  #roadMenuRoadPage .road-github-control-row {
+    margin-top: 7px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+
+  #roadMenuRoadPage .road-github-control-row button {
+    min-height: 34px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: #f2f2f7;
+    color: #1c1c1e;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  #roadMenuRoadPage .road-github-status {
+    margin-top: 8px;
+    color: #8e8e93;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  #roadMenuRoadPage .road-github-status.connected { color: #248a3d; }
+  #roadMenuRoadPage .road-github-status.error { color: #c9342f; }
+
+  #roadMenuRoadPage .road-github-help {
+    margin-top: 5px;
+    color: #8e8e93;
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+
 </style>
 
 </head>
@@ -14059,6 +14096,12 @@
             applyRoadLineVisibility(road);
           });
         });
+
+        groups.forEach(function(group) {
+          if (group && group.layerId === "rural") {
+            updateRoadGroupJoinLineVisibility(group);
+          }
+        });
       }
 
       /*
@@ -14386,6 +14429,7 @@
       .then(function () {
         buildGroupLabels();
         makeLists();
+        refreshAllRoadJoinLines();
         if (typeof installRoadDatasetManager === "function") {
           installRoadDatasetManager();
           updateRoadDatasetManagerStatus();
@@ -14543,12 +14587,15 @@
         changedPath: "roads.geojson"
       };
 
+      const ROAD_GITHUB_TOKEN_KEY = "gyeongjuGithubToken";
+
       function getRoadGithubToken() {
         const input = document.getElementById("roadGithubToken");
         const direct = input ? String(input.value || "").trim() : "";
         if (direct) return direct;
+
         try {
-          return String(sessionStorage.getItem("gyeongjuGithubToken") || "").trim();
+          return String(localStorage.getItem(ROAD_GITHUB_TOKEN_KEY) || "").trim();
         } catch (e) {
           return "";
         }
@@ -14556,10 +14603,65 @@
 
       function rememberRoadGithubToken(token) {
         const value = String(token || "").trim();
-        if (!value) return;
+        if (!value) return false;
+
         try {
-          sessionStorage.setItem("gyeongjuGithubToken", value);
+          localStorage.setItem(ROAD_GITHUB_TOKEN_KEY, value);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function updateRoadGithubConnectionStatus(message, connected) {
+        const el = document.getElementById("roadGithubConnectionStatus");
+        if (!el) return;
+        el.textContent = message || "";
+        el.classList.toggle("connected", connected === true);
+        el.classList.toggle("error", connected === false);
+      }
+
+      function forgetRoadGithubToken() {
+        try {
+          localStorage.removeItem(ROAD_GITHUB_TOKEN_KEY);
         } catch (e) {}
+
+        const input = document.getElementById("roadGithubToken");
+        if (input) input.value = "";
+        updateRoadGithubConnectionStatus("저장된 인증정보 없음", false);
+      }
+
+      async function testRoadGithubConnection(token) {
+        const value = String(token || getRoadGithubToken() || "").trim();
+
+        if (!value) {
+          throw new Error("GitHub 토큰이 저장되어 있지 않습니다.");
+        }
+
+        const url =
+          "https://api.github.com/repos/" +
+          encodeURIComponent(GYEONGJU_GITHUB.owner) + "/" +
+          encodeURIComponent(GYEONGJU_GITHUB.repo);
+
+        const response = await fetch(url, {
+          method: "GET",
+          headers: roadGithubHeaders(value),
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error("GitHub 인증정보가 올바르지 않습니다. 새 토큰을 입력해 주세요.");
+          }
+
+          const detail = await response.text();
+          throw new Error(
+            "GitHub 연결 확인 실패 (" + response.status + ")" +
+            (detail ? "\\n" + detail : "")
+          );
+        }
+
+        return await response.json();
       }
 
       function roadGithubHeaders(token) {
@@ -14607,9 +14709,18 @@
 
         if (!response.ok) {
           const detail = await response.text();
+
+          if (response.status === 401) {
+            forgetRoadGithubToken();
+            throw new Error(
+              "GitHub 인증정보가 만료되었거나 올바르지 않습니다.\n" +
+              "GitHub 저장 설정에서 새 토큰을 입력하고 연결 확인을 눌러 주세요."
+            );
+          }
+
           throw new Error(
             "GitHub 파일 확인 실패 (" + response.status + ")" +
-            (detail ? "\\n" + detail : "")
+            (detail ? "\n" + detail : "")
           );
         }
 
@@ -14813,6 +14924,12 @@
             labelItem._visible = false;
           });
 
+          groups.forEach(function(group) {
+            if (group && group.layerId === "rural") {
+              updateRoadGroupJoinLineVisibility(group);
+            }
+          });
+
           if (
             selectedRoadGroupKey &&
             groups.get(selectedRoadGroupKey) &&
@@ -14956,6 +15073,7 @@
         Array.from(groups.keys()).forEach(function(key) {
           const group = groups.get(key);
           if (group && group.layerId === "rural") {
+            removeRoadGroupJoinLines(group);
             groups.delete(key);
             hiddenRoadGroups.delete(key);
           }
@@ -14965,6 +15083,7 @@
 
         await processRoadFeaturesInChunks(data.features, "rural");
 
+        refreshAllRoadJoinLines();
         buildGroupLabels();
         makeLists();
 
@@ -14992,11 +15111,17 @@
 
           '<div class="road-github-card">' +
             '<div class="road-github-title">GitHub 저장 설정</div>' +
-            '<div class="road-github-token-row">' +
-              '<input id="roadGithubToken" type="password" autocomplete="off" placeholder="GitHub 토큰 입력">' +
-              '<button id="roadGithubTokenRemember" type="button">세션 저장</button>' +
-            '</div>' +
             '<div class="road-github-repo">puren21 / gyeongju_road · main</div>' +
+            '<div class="road-github-token-row">' +
+              '<input id="roadGithubToken" type="password" autocomplete="off" placeholder="GitHub 토큰을 한 번만 입력">' +
+              '<button id="roadGithubTokenRemember" type="button">저장</button>' +
+            '</div>' +
+            '<div class="road-github-control-row">' +
+              '<button id="roadGithubTest" type="button">연결 확인</button>' +
+              '<button id="roadGithubForget" type="button">인증정보 삭제</button>' +
+            '</div>' +
+            '<div id="roadGithubConnectionStatus" class="road-github-status">인증정보 확인 중</div>' +
+            '<div class="road-github-help">한 번 저장하면 이 브라우저에서 계속 사용합니다. 인증정보는 index.html에 포함되지 않습니다.</div>' +
           '</div>' +
 
           '<div class="road-dataset-card" data-dataset="base">' +
@@ -15046,26 +15171,78 @@
         const changedSave = document.getElementById("changedRoadDatasetSave");
         const tokenInput = document.getElementById("roadGithubToken");
         const tokenRemember = document.getElementById("roadGithubTokenRemember");
+        const tokenTest = document.getElementById("roadGithubTest");
+        const tokenForget = document.getElementById("roadGithubForget");
 
         clearLegacyRoadDatasetStorage();
 
         try {
           const rememberedToken =
-            sessionStorage.getItem("gyeongjuGithubToken") || "";
+            localStorage.getItem(ROAD_GITHUB_TOKEN_KEY) || "";
+
           if (tokenInput && rememberedToken) {
             tokenInput.value = rememberedToken;
+            updateRoadGithubConnectionStatus("저장된 인증정보 있음", true);
+          } else {
+            updateRoadGithubConnectionStatus("저장된 인증정보 없음", false);
           }
-        } catch (e) {}
+        } catch (e) {
+          updateRoadGithubConnectionStatus("인증정보를 읽지 못했습니다.", false);
+        }
 
         if (tokenRemember) {
-          tokenRemember.addEventListener("click", function() {
+          tokenRemember.addEventListener("click", async function() {
             const token = tokenInput ? String(tokenInput.value || "").trim() : "";
             if (!token) {
               alert("GitHub 토큰을 입력해 주세요.");
               return;
             }
-            rememberRoadGithubToken(token);
-            alert("이 브라우저 탭을 닫기 전까지 GitHub 토큰을 유지합니다.");
+
+            tokenRemember.disabled = true;
+            tokenRemember.textContent = "확인 중";
+
+            try {
+              await testRoadGithubConnection(token);
+
+              if (!rememberRoadGithubToken(token)) {
+                throw new Error("브라우저에 인증정보를 저장하지 못했습니다.");
+              }
+
+              updateRoadGithubConnectionStatus("GitHub 연결됨", true);
+              alert("GitHub 저장 설정을 프로그램에 저장했습니다.");
+            } catch (error) {
+              updateRoadGithubConnectionStatus("GitHub 연결 실패", false);
+              alert("GitHub 인증 실패\\n\\n" + error.message);
+            } finally {
+              tokenRemember.disabled = false;
+              tokenRemember.textContent = "저장";
+            }
+          });
+        }
+
+        if (tokenTest) {
+          tokenTest.addEventListener("click", async function() {
+            tokenTest.disabled = true;
+            tokenTest.textContent = "확인 중";
+
+            try {
+              await testRoadGithubConnection();
+              updateRoadGithubConnectionStatus("GitHub 연결됨", true);
+              alert("GitHub 연결이 정상입니다.");
+            } catch (error) {
+              updateRoadGithubConnectionStatus("GitHub 연결 실패", false);
+              alert("GitHub 연결 확인 실패\\n\\n" + error.message);
+            } finally {
+              tokenTest.disabled = false;
+              tokenTest.textContent = "연결 확인";
+            }
+          });
+        }
+
+        if (tokenForget) {
+          tokenForget.addEventListener("click", function() {
+            forgetRoadGithubToken();
+            alert("저장된 GitHub 인증정보를 삭제했습니다.");
           });
         }
 
@@ -15121,11 +15298,14 @@
             return;
           }
 
-          rememberRoadGithubToken(token);
           baseSave.disabled = true;
           baseSave.textContent = "저장 중";
 
           try {
+            await testRoadGithubConnection(token);
+            rememberRoadGithubToken(token);
+            updateRoadGithubConnectionStatus("GitHub 연결됨", true);
+
             await overwriteGithubRoadFile(
               GYEONGJU_GITHUB.basePath,
               pendingBaseRoadGeoJSON,
@@ -15165,11 +15345,14 @@
             return;
           }
 
-          rememberRoadGithubToken(token);
           changedSave.disabled = true;
           changedSave.textContent = "저장 중";
 
           try {
+            await testRoadGithubConnection(token);
+            rememberRoadGithubToken(token);
+            updateRoadGithubConnectionStatus("GitHub 연결됨", true);
+
             const replacingData = pendingChangedRoadGeoJSON;
 
             await overwriteGithubRoadFile(
@@ -17348,6 +17531,133 @@
         if (allIndex >= 0) allRoads.splice(allIndex, 1);
       }
 
+      function removeRoadGroupJoinLines(group) {
+        if (!group || !Array.isArray(group._segmentJoinLines)) return;
+        group._segmentJoinLines.forEach(function(line) {
+          try {
+            if (line) line.setMap(null);
+          } catch (e) {}
+        });
+        group._segmentJoinLines = [];
+      }
+
+      function pointTowardDistance(from, to, meters) {
+        if (!from || !to) return from || to || null;
+        const total = distanceMeters(from, to);
+        if (!Number.isFinite(total) || total <= 0) return from;
+
+        const ratio = Math.max(0, Math.min(1, Number(meters) / total));
+        return new kakao.maps.LatLng(
+          from.getLat() + (to.getLat() - from.getLat()) * ratio,
+          from.getLng() + (to.getLng() - from.getLng()) * ratio
+        );
+      }
+
+      function refreshRoadGroupJoinLines(group) {
+        if (!group || group.layerId !== "rural") return;
+
+        removeRoadGroupJoinLines(group);
+        group._segmentJoinLines = [];
+
+        const paths = group.paths || [];
+        const roads = group.roads || [];
+
+        for (let i = 0; i < paths.length - 1; i++) {
+          const pathA = paths[i];
+          const pathB = paths[i + 1];
+          const roadA = roads[i];
+          const roadB = roads[i + 1];
+
+          if (
+            !pathA || pathA.length < 2 ||
+            !pathB || pathB.length < 2 ||
+            !roadA || !roadB
+          ) continue;
+
+          const endA = pathA[pathA.length - 1];
+          const startB = pathB[0];
+
+          // 실제로 같은 분할점에서 이어지는 구간만 연결부를 보강함.
+          if (distanceMeters(endA, startB) > 0.08) continue;
+
+          const shared = new kakao.maps.LatLng(
+            (endA.getLat() + startB.getLat()) / 2,
+            (endA.getLng() + startB.getLng()) / 2
+          );
+
+          // 양쪽 geometry 끝점을 완전히 동일한 좌표로 강제.
+          pathA[pathA.length - 1] = shared;
+          pathB[0] = shared;
+
+          if (roadA.pathFine && roadA.pathFine.length) {
+            roadA.pathFine[roadA.pathFine.length - 1] = shared;
+          }
+          if (roadB.pathFine && roadB.pathFine.length) {
+            roadB.pathFine[0] = shared;
+          }
+
+          const before = pathA[pathA.length - 2];
+          const after = pathB[1];
+
+          // 점선/대시 선형이 분할점에서 패턴을 다시 시작하면서 생기는
+          // 시각적 빈틈을 2m + 2m의 짧은 solid 보조선으로만 메움.
+          const left = pointTowardDistance(shared, before, 2.0);
+          const right = pointTowardDistance(shared, after, 2.0);
+
+          const style = ROAD_STYLES[roadA.styleKey] || ROAD_STYLES.FARM;
+          const joinLine = new kakao.maps.Polyline({
+            map: null,
+            path: [left, shared, right],
+            strokeWeight: mapStrokePx(
+              roadA.statusKey === "UNOPENED"
+                ? Math.max(style.mid || 3, STATUS_STYLES.UNOPENED_SIZE)
+                : (style.mid || 3),
+              1
+            ),
+            strokeColor: getRoadLayerDisplayColor(
+              roadA.styleKey,
+              getRoadLayerStack(roadA.styleKey)[0]
+            ),
+            strokeOpacity: Math.max(
+              0,
+              Math.min(100, Number(style.topOpacity) || 100)
+            ) / 100,
+            strokeStyle: "solid",
+            zIndex: 34
+          });
+
+          group._segmentJoinLines.push(joinLine);
+        }
+
+        updateRoadGroupJoinLineVisibility(group);
+      }
+
+      function updateRoadGroupJoinLineVisibility(group) {
+        if (!group || !Array.isArray(group._segmentJoinLines)) return;
+
+        const show =
+          changedRoadDatasetVisible &&
+          LAYERS.rural.visible &&
+          isRoadLayerVisibleAtScale("rural") &&
+          !hiddenRoadGroups.has(group.key);
+
+        group._segmentJoinLines.forEach(function(line) {
+          if (!line) return;
+          const shown = !!line.getMap();
+          if (show !== shown) {
+            line.setMap(show ? map : null);
+          }
+        });
+      }
+
+      function refreshAllRoadJoinLines() {
+        groups.forEach(function(group) {
+          if (group && group.layerId === "rural") {
+            refreshRoadGroupJoinLines(group);
+          }
+        });
+      }
+
       function serializeRoadGroupSegments(group) {
         if (!group || group.layerId !== "rural") return null;
 
@@ -17419,6 +17729,7 @@
         });
 
         syncRuralGeometryTotal(group);
+        refreshRoadGroupJoinLines(group);
 
         if (
           selectedRoadGroupKey === group.key &&
@@ -17738,6 +18049,7 @@
           group.roads.splice(roadIndex + 1, 0, newRoad);
           group.propertiesList.splice(roadIndex + 1, 0, secondProperties);
 
+          refreshRoadGroupJoinLines(group);
           recalcGroupBounds(group);
           syncRuralGeometryTotal(group);
 
@@ -18812,7 +19124,13 @@
         if (state.splitMarker) state.splitMarker.setMap(null);
 
         const i = state.splitSegmentIndex;
-        const split = state.splitPosition;
+
+        // 두 분할선은 서로 다른 근사점이 아니라 정확히 같은 좌표 객체를 공유함.
+        const split = new kakao.maps.LatLng(
+          state.splitPosition.getLat(),
+          state.splitPosition.getLng()
+        );
+        state.splitPosition = split;
 
         state.splitPathA = state.workingPath.slice(0, i + 1).concat([split]);
         state.splitPathB = [split].concat(state.workingPath.slice(i + 1));
@@ -19213,12 +19531,21 @@
           let savedSecondaryPath = null;
 
           if (hasSplit) {
+            const sharedSplitPoint = new kakao.maps.LatLng(
+              state.splitPosition.getLat(),
+              state.splitPosition.getLng()
+            );
+
             savedPrimaryPath = state.workingPath
               .slice(0, state.splitSegmentIndex + 1)
-              .concat([state.splitPosition]);
+              .concat([sharedSplitPoint]);
 
-            savedSecondaryPath = [state.splitPosition]
+            savedSecondaryPath = [sharedSplitPoint]
               .concat(state.workingPath.slice(state.splitSegmentIndex + 1));
+
+            // A 마지막점과 B 첫점은 저장 전에도 동일 객체/동일 좌표로 고정.
+            savedPrimaryPath[savedPrimaryPath.length - 1] = sharedSplitPoint;
+            savedSecondaryPath[0] = sharedSplitPoint;
           }
 
           const tolerance = getDisplaySimplifyTolerance(road.styleKey);
@@ -19265,6 +19592,9 @@
             group.paths.splice(state.roadIndex + 1, 0, savedSecondaryPath.slice());
             group.roads.splice(state.roadIndex + 1, 0, secondRoad);
             group.propertiesList.splice(state.roadIndex + 1, 0, secondProperties);
+
+            // 분할점은 geometry상 정확히 연결하고 화면에서도 끊김 없이 보강.
+            refreshRoadGroupJoinLines(group);
 
             selectedRoadSegmentIndex = state.roadIndex;
             setSelectedRoadSegment(
