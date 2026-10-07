@@ -8777,6 +8777,87 @@
     }
   }
 
+
+  /* ===== 도로폭 측정(실폭도로 타일 참조) ===== */
+  #roadWidthHint {
+    position: absolute;
+    right: 70px;
+    bottom: 126px;
+    z-index: 80;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - 100px));
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: #fff;
+    background: rgba(40,43,48,.92);
+    box-shadow: 0 2px 8px rgba(0,0,0,.24);
+    font-size: 12px;
+    line-height: 1.35;
+    pointer-events: auto;
+  }
+
+  #roadWidthHint button {
+    flex: 0 0 auto;
+    min-width: 44px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid rgba(255,255,255,.38);
+    border-radius: 5px;
+    color: #fff;
+    background: rgba(255,255,255,.10);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  #roadWidthHint button:hover {
+    background: rgba(255,255,255,.20);
+  }
+
+  .road-width-point {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #f01818;
+    box-shadow: 0 1px 3px rgba(0,0,0,.45);
+    pointer-events: none;
+  }
+
+  .road-width-result-label {
+    min-width: 108px;
+    padding: 6px 9px;
+    border: 1px solid rgba(0,0,0,.12);
+    border-radius: 6px;
+    color: #202124;
+    background: rgba(255,255,255,.97);
+    box-shadow: 0 2px 8px rgba(0,0,0,.22);
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .road-width-result-label strong {
+    display: block;
+    color: #e21b1b;
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  @media (max-width:700px) {
+    #roadWidthHint {
+      right: 8px;
+      bottom: 64px;
+      left: 8px;
+      max-width: none;
+      justify-content: space-between;
+      box-sizing: border-box;
+    }
+  }
+
 </style>
 
 </head>
@@ -8845,6 +8926,12 @@
         <circle cx="14" cy="19" r="1.7" fill="currentColor"/>
       </svg>
     </button>
+    <button id="roadWidthBtn" class="measure-icon" type="button" title="도로폭 측정" aria-label="도로폭 측정">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4v16M19 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M7.2 12h9.6M7.2 12l3-3M7.2 12l3 3M16.8 12l-3-3M16.8 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
 
     <button id="locationBtn" type="button" title="현위치" aria-label="현위치">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -8859,6 +8946,10 @@
     <button id="measureUndoBtn" type="button">한 단계 취소</button>
     <button id="measureFinishBtn" type="button">완료</button>
     <button id="measureClearBtn" type="button">삭제</button>
+  </div>
+  <div id="roadWidthHint">
+    <span>도로구간 라인 위에서 폭을 확인할 지점을 클릭하세요.</span>
+    <button id="roadWidthCloseBtn" type="button">종료</button>
   </div>
 
   <button id="listOpen" title="노선목록 펼치기" aria-label="노선목록 펼치기">▶</button>
@@ -10828,8 +10919,24 @@
       let measureSegmentOverlays = [];
       let measureMousePosition = null;
 
+      /* 실폭도로를 이용한 1점 도로폭 측정 */
+      let roadWidthMeasureMode = false;
+      let roadWidthIndex = null;
+      let roadWidthIndexPromise = null;
+      const roadWidthTileCache = new Map();
+      const ROAD_WIDTH_TILE_CACHE_LIMIT = 6;
+      let roadWidthMeasureLine = null;
+      let roadWidthMeasureLabel = null;
+      let roadWidthMeasurePoints = [];
+
+      const ROAD_WIDTH_EARTH_RADIUS = 6371008.8;
+      const ROAD_WIDTH_RAD = Math.PI / 180;
+
       const distanceBtn = document.getElementById("distanceBtn");
       const areaBtn = document.getElementById("areaBtn");
+      const roadWidthBtn = document.getElementById("roadWidthBtn");
+      const roadWidthHint = document.getElementById("roadWidthHint");
+      const roadWidthCloseBtn = document.getElementById("roadWidthCloseBtn");
       const measureHint = document.getElementById("measureHint");
       const measureGuide = measureHint.querySelector(".measure-guide");
       const measureUndoBtn = document.getElementById("measureUndoBtn");
@@ -10910,11 +11017,366 @@
 
       distanceBtn.onclick = function () { toggleMeasure("distance"); };
       areaBtn.onclick = function () { toggleMeasure("area"); };
+      roadWidthBtn.onclick = function () {
+        if (roadWidthMeasureMode) {
+          stopRoadWidthMeasure();
+        } else {
+          startRoadWidthMeasure();
+        }
+      };
+      roadWidthCloseBtn.onclick = function(event) {
+        event.stopPropagation();
+        stopRoadWidthMeasure();
+      };
       measureUndoBtn.onclick = function (event) { event.stopPropagation(); undoMeasurePoint(); };
+
+      function clearRoadWidthResult() {
+        removeOverlay(roadWidthMeasureLine);
+        removeOverlay(roadWidthMeasureLabel);
+        roadWidthMeasurePoints.forEach(removeOverlay);
+        roadWidthMeasureLine = null;
+        roadWidthMeasureLabel = null;
+        roadWidthMeasurePoints = [];
+      }
+
+      function startRoadWidthMeasure() {
+        clearMeasure();
+        clearRoadWidthResult();
+        roadWidthMeasureMode = true;
+        roadWidthBtn.classList.add("active");
+        roadWidthHint.style.display = "flex";
+        map.setCursor("crosshair");
+        closeRoadPopup();
+        closeRoadEditPanel();
+      }
+
+      function stopRoadWidthMeasure() {
+        roadWidthMeasureMode = false;
+        roadWidthBtn.classList.remove("active");
+        roadWidthHint.style.display = "none";
+        map.setCursor("");
+        clearRoadWidthResult();
+      }
+
+      window.stopRoadWidthMeasure = stopRoadWidthMeasure;
+
+      async function loadRoadWidthIndex() {
+        if (roadWidthIndex) return roadWidthIndex;
+        if (!roadWidthIndexPromise) {
+          roadWidthIndexPromise = fetch("./road_width/index.json", { cache: "force-cache" })
+            .then(function(response) {
+              if (!response.ok) throw new Error("실폭도로 인덱스를 불러오지 못했습니다.");
+              return response.json();
+            })
+            .then(function(data) {
+              roadWidthIndex = data;
+              return data;
+            })
+            .catch(function(error) {
+              roadWidthIndexPromise = null;
+              throw error;
+            });
+        }
+        return roadWidthIndexPromise;
+      }
+
+      async function loadRoadWidthTile(path) {
+        if (roadWidthTileCache.has(path)) {
+          const cached = roadWidthTileCache.get(path);
+          roadWidthTileCache.delete(path);
+          roadWidthTileCache.set(path, cached);
+          return cached;
+        }
+
+        const response = await fetch("./road_width/" + path, { cache: "force-cache" });
+        if (!response.ok) throw new Error("실폭도로 타일을 불러오지 못했습니다.");
+        const data = await response.json();
+
+        roadWidthTileCache.set(path, data);
+        while (roadWidthTileCache.size > ROAD_WIDTH_TILE_CACHE_LIMIT) {
+          const oldestKey = roadWidthTileCache.keys().next().value;
+          roadWidthTileCache.delete(oldestKey);
+        }
+        return data;
+      }
+
+      function roadWidthTileKey(index, position) {
+        const lon = position.getLng();
+        const lat = position.getLat();
+        const ix = Math.floor((lon - index.origin[0]) / index.tileSize + 1e-10);
+        const iy = Math.floor((lat - index.origin[1]) / index.tileSize + 1e-10);
+        return { ix: ix, iy: iy, key: ix + "_" + iy };
+      }
+
+      function roadWidthNeighborKeys(index, position) {
+        const base = roadWidthTileKey(index, position);
+        const result = [base.key];
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (!dx && !dy) continue;
+            result.push((base.ix + dx) + "_" + (base.iy + dy));
+          }
+        }
+        return result;
+      }
+
+      function roadWidthToLocal(coord, center) {
+        const lat0 = center.getLat() * ROAD_WIDTH_RAD;
+        return {
+          x: (coord[0] - center.getLng()) * ROAD_WIDTH_RAD * ROAD_WIDTH_EARTH_RADIUS * Math.cos(lat0),
+          y: (coord[1] - center.getLat()) * ROAD_WIDTH_RAD * ROAD_WIDTH_EARTH_RADIUS
+        };
+      }
+
+      function roadWidthLocalToLatLng(x, y, center) {
+        const lat0 = center.getLat() * ROAD_WIDTH_RAD;
+        const lat = center.getLat() + y / ROAD_WIDTH_EARTH_RADIUS / ROAD_WIDTH_RAD;
+        const lng = center.getLng() + x / (ROAD_WIDTH_EARTH_RADIUS * Math.cos(lat0)) / ROAD_WIDTH_RAD;
+        return new kakao.maps.LatLng(lat, lng);
+      }
+
+      function roadWidthCross(a, b) {
+        return a.x * b.y - a.y * b.x;
+      }
+
+      function roadWidthRingIntersections(ring, center, normal, maxDistance) {
+        const values = [];
+        if (!ring || ring.length < 2) return values;
+
+        for (let i = 0; i < ring.length - 1; i += 1) {
+          const a = roadWidthToLocal(ring[i], center);
+          const b = roadWidthToLocal(ring[i + 1], center);
+          const edge = { x: b.x - a.x, y: b.y - a.y };
+          const denom = roadWidthCross(normal, edge);
+
+          if (Math.abs(denom) < 1e-9) continue;
+
+          const t = roadWidthCross(a, edge) / denom;
+          const u = roadWidthCross(a, normal) / denom;
+
+          if (u >= -1e-9 && u <= 1 + 1e-9 && Math.abs(t) <= maxDistance) {
+            values.push(t);
+          }
+        }
+        return values;
+      }
+
+      function roadWidthIntervalsForPolygon(polygon, center, normal, maxDistance) {
+        let hits = [];
+        (polygon || []).forEach(function(ring) {
+          hits = hits.concat(roadWidthRingIntersections(ring, center, normal, maxDistance));
+        });
+
+        hits.sort(function(a, b) { return a - b; });
+
+        const unique = [];
+        hits.forEach(function(value) {
+          if (!unique.length || Math.abs(value - unique[unique.length - 1]) > 0.03) {
+            unique.push(value);
+          }
+        });
+
+        const intervals = [];
+        for (let i = 0; i + 1 < unique.length; i += 2) {
+          const a = unique[i];
+          const b = unique[i + 1];
+          const width = b - a;
+          if (width >= 0.5 && width <= 40) {
+            intervals.push({
+              a: a,
+              b: b,
+              width: width,
+              offset: a <= 0 && b >= 0 ? 0 : Math.min(Math.abs(a), Math.abs(b))
+            });
+          }
+        }
+        return intervals;
+      }
+
+      function roadWidthCandidateFromFeature(feature, center, normal) {
+        const geometry = feature && feature.geometry;
+        if (!geometry || geometry.type !== "MultiPolygon") return null;
+
+        let best = null;
+        (geometry.coordinates || []).forEach(function(polygon) {
+          roadWidthIntervalsForPolygon(polygon, center, normal, 60).forEach(function(interval) {
+            if (interval.offset > 10) return;
+            if (
+              !best ||
+              interval.offset < best.offset - 0.01 ||
+              (Math.abs(interval.offset - best.offset) <= 0.01 && interval.width < best.width)
+            ) {
+              best = interval;
+            }
+          });
+        });
+        return best;
+      }
+
+      function roadWidthDirectionForRoad(road, nearest) {
+        const path = (road && (road.pathFine || road.pathMedium || road.pathCoarse)) || [];
+        if (path.length < 2 || !nearest) return null;
+
+        const i = Math.max(0, Math.min(path.length - 2, nearest.segmentIndex || 0));
+        const a = path[Math.max(0, i - 2)];
+        const b = path[Math.min(path.length - 1, i + 3)];
+
+        const center = nearest.position;
+        const aLocal = roadWidthToLocal([a.getLng(), a.getLat()], center);
+        const bLocal = roadWidthToLocal([b.getLng(), b.getLat()], center);
+
+        const dx = bLocal.x - aLocal.x;
+        const dy = bLocal.y - aLocal.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.05) return null;
+
+        return {
+          tangent: { x: dx / length, y: dy / length },
+          normal: { x: -dy / length, y: dx / length }
+        };
+      }
+
+      function renderRoadWidthResult(center, normal, candidate) {
+        clearRoadWidthResult();
+
+        const left = roadWidthLocalToLatLng(
+          normal.x * candidate.a,
+          normal.y * candidate.a,
+          center
+        );
+        const right = roadWidthLocalToLatLng(
+          normal.x * candidate.b,
+          normal.y * candidate.b,
+          center
+        );
+        const middle = roadWidthLocalToLatLng(
+          normal.x * ((candidate.a + candidate.b) / 2),
+          normal.y * ((candidate.a + candidate.b) / 2),
+          center
+        );
+
+        roadWidthMeasureLine = new kakao.maps.Polyline({
+          map: map,
+          path: [left, right],
+          strokeWeight: 4,
+          strokeColor: "#f01818",
+          strokeOpacity: 0.92,
+          strokeStyle: "solid",
+          zIndex: 190
+        });
+
+        [left, right].forEach(function(position) {
+          roadWidthMeasurePoints.push(new kakao.maps.CustomOverlay({
+            map: map,
+            position: position,
+            content: '<div class="road-width-point"></div>',
+            xAnchor: 0.5,
+            yAnchor: 0.5,
+            zIndex: 191
+          }));
+        });
+
+        roadWidthMeasureLabel = new kakao.maps.CustomOverlay({
+          map: map,
+          position: middle,
+          content:
+            '<div class="road-width-result-label">' +
+              '<span>실폭도로 기준</span>' +
+              '<strong>' + candidate.width.toFixed(2) + ' m</strong>' +
+            '</div>',
+          xAnchor: 0.5,
+          yAnchor: 1.35,
+          zIndex: 192
+        });
+      }
+
+      async function measureRoadWidthAt(position, road) {
+        if (!roadWidthMeasureMode || !position || !road) return;
+
+        const path = road.pathFine || road.pathMedium || road.pathCoarse || [];
+        const nearest = nearestPointOnRoadSegment(path, position);
+        if (!nearest) {
+          alert("선택한 도로구간에서 측정 지점을 찾지 못했습니다.");
+          return;
+        }
+
+        const direction = roadWidthDirectionForRoad(road, nearest);
+        if (!direction) {
+          alert("이 지점의 도로 방향을 계산하지 못했습니다.");
+          return;
+        }
+
+        map.setCursor("wait");
+        roadWidthHint.querySelector("span").textContent = "실폭도로 데이터를 확인하고 있습니다…";
+
+        try {
+          const index = await loadRoadWidthIndex();
+          const keys = roadWidthNeighborKeys(index, nearest.position);
+          let best = null;
+
+          // 우선 클릭 지점 타일만 조회
+          const firstInfo = index.tiles[keys[0]];
+          if (firstInfo) {
+            const firstTile = await loadRoadWidthTile(firstInfo.file);
+            (firstTile.features || []).forEach(function(feature) {
+              const candidate = roadWidthCandidateFromFeature(feature, nearest.position, direction.normal);
+              if (
+                candidate &&
+                (!best || candidate.offset < best.offset - 0.01 ||
+                  (Math.abs(candidate.offset - best.offset) <= 0.01 && candidate.width < best.width))
+              ) {
+                best = candidate;
+              }
+            });
+          }
+
+          // 중심 타일에서 찾지 못한 경우에만 인접 8개 타일 조회
+          if (!best) {
+            for (let i = 1; i < keys.length; i += 1) {
+              const info = index.tiles[keys[i]];
+              if (!info) continue;
+              const tile = await loadRoadWidthTile(info.file);
+              (tile.features || []).forEach(function(feature) {
+                const candidate = roadWidthCandidateFromFeature(feature, nearest.position, direction.normal);
+                if (
+                  candidate &&
+                  (!best || candidate.offset < best.offset - 0.01 ||
+                    (Math.abs(candidate.offset - best.offset) <= 0.01 && candidate.width < best.width))
+                ) {
+                  best = candidate;
+                }
+              });
+              if (best && best.offset === 0) break;
+            }
+          }
+
+          if (!best) {
+            clearRoadWidthResult();
+            alert("이 지점에서 실폭도로 경계를 찾지 못했습니다.");
+            return;
+          }
+
+          renderRoadWidthResult(nearest.position, direction.normal, best);
+        } catch (error) {
+          console.error("도로폭 측정 오류", error);
+          clearRoadWidthResult();
+          alert(
+            "실폭도로 데이터를 불러오지 못했습니다.\\n" +
+            "GitHub에 road_width 폴더가 함께 업로드되어 있는지 확인해 주세요."
+          );
+        } finally {
+          map.setCursor(roadWidthMeasureMode ? "crosshair" : "");
+          if (roadWidthMeasureMode) {
+            roadWidthHint.querySelector("span").textContent =
+              "도로구간 라인 위에서 폭을 확인할 지점을 클릭하세요.";
+          }
+        }
+      }
       measureFinishBtn.onclick = function (event) { event.stopPropagation(); finishMeasure(); };
       measureClearBtn.onclick = function (event) { event.stopPropagation(); clearMeasure(); };
 
       function toggleMeasure(mode) {
+        if (roadWidthMeasureMode) stopRoadWidthMeasure();
         if (measureMode === mode) {
           clearMeasure();
           return;
@@ -16689,6 +17151,12 @@
           hitLine,
           "click",
           function(event) {
+            if (roadWidthMeasureMode) {
+              kakao.maps.event.preventMap();
+              measureRoadWidthAt(event.latLng, road);
+              return;
+            }
+
             if (measureMode) {
               kakao.maps.event.preventMap();
               addMeasurePoint(event.latLng);
@@ -21987,6 +22455,12 @@
         map,
         "click",
         function (event) {
+          if (roadWidthMeasureMode) {
+            // 도로폭 측정은 두꺼운 도로 hitLine에서만 처리함.
+            // 빈 지도 클릭은 노선 선택/팝업 동작으로 넘기지 않음.
+            return;
+          }
+
           if (measureMode) {
             addMeasurePoint(event.latLng);
             return;
@@ -22027,6 +22501,7 @@
       };
 
       function startRoadview() {
+        if (roadWidthMeasureMode) stopRoadWidthMeasure();
         if (!roadviewOverlay) {
           roadviewOverlay =
             new kakao.maps.RoadviewOverlay();
