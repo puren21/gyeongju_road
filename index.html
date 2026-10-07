@@ -16219,20 +16219,8 @@
           ["input", "change"].forEach(function(type) {
             editForm.addEventListener(type, function(event) {
               if (event.target && !event.target.readOnly) {
-                // 중복 표시되는 선택구간 입력값은 서로 동기화함.
-                const name = event.target.name;
-                if (name === "lane" || name === "laneSelected") {
-                  const peer = editForm.querySelector(
-                    name === "lane" ? '[name="laneSelected"]' : '[name="lane"]'
-                  );
-                  if (peer) peer.value = event.target.value;
-                }
-                if (name === "width" || name === "widthSelected") {
-                  const peer = editForm.querySelector(
-                    name === "width" ? '[name="widthSelected"]' : '[name="width"]'
-                  );
-                  if (peer) peer.value = event.target.value;
-                }
+                // 차선현황/도로폭 전체값은 자동 요약으로 두고,
+                // (선택구간) 항목만 직접 수정함.
                 setRoadEditDirty(true);
               }
             });
@@ -17823,6 +17811,30 @@
       }
 
 
+      function showRoadGeometrySplitVertices(state) {
+        if (!state) return;
+
+        (state.markers || []).forEach(function(marker) {
+          try { marker.setMap(null); } catch (e) {}
+        });
+        state.markers = [];
+
+        const markerImage = createSimpleVertexMarkerImage();
+
+        state.workingPath.forEach(function(position) {
+          const marker = new kakao.maps.Marker({
+            map: map,
+            position: position,
+            image: markerImage,
+            draggable: false,
+            clickable: false,
+            zIndex: 225
+          });
+
+          state.markers.push(marker);
+        });
+      }
+
       function clearRoadGeometrySplitPreview(state) {
         if (!state) return;
 
@@ -17928,12 +17940,13 @@
           map.setCursor("");
         } else {
           hideGeometryHoverPlus(state, true);
-          (state.markers || []).forEach(function(marker) {
-            marker.setMap(null);
-          });
-          state.markers = [];
+
+          // 라인 나누기 중에도 현재 라인의 모든 꼭지점을 화면에 표시함.
+          // 분할 모드의 꼭지점은 위치 확인용이며 이동/삭제는 되지 않음.
+          showRoadGeometrySplitVertices(state);
+
           if (help) {
-            help.textContent = "QGIS 피처 분할처럼 나눌 위치를 현재 라인 위에서 클릭";
+            help.textContent = "꼭지점을 확인하면서 나눌 위치를 현재 라인 위에서 클릭";
           }
           map.setCursor("crosshair");
         }
@@ -19316,8 +19329,8 @@
             ["면도", "리도", "농도"]
           ) +
           popupEditRow("구간현황", "statusSummary", statusLengthSummary(group), "text", null, true) +
-          popupEditRow("차선현황", "lane", safe(props["차선"]) === "-" ? "" : props["차선"], "text") +
-          popupEditRow("도로폭", "width", safe(props["도로폭"]) === "-" ? "" : props["도로폭"], "text", null, false, "m") +
+          popupEditRow("차선현황", "laneSummary", rangeValues(list, "차선"), "text", null, true) +
+          popupEditRow("도로폭", "widthSummary", rangeValues(list, "도로폭"), "text", null, true, "m") +
           popupEditRow("총연장", "totalLength", formatRoadLengthKm(groupRoadGeometryTotalKm(group)), "text", null, true, "km") +
           popupEditRow("차선현황(선택구간)", "laneSelected", safe(props["차선"]) === "-" ? "" : props["차선"], "text") +
           popupEditRow("도로폭(선택구간)", "widthSelected", safe(props["도로폭"]) === "-" ? "" : props["도로폭"], "text", null, false, "m") +
