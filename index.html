@@ -9084,6 +9084,20 @@
     font-weight: 800 !important;
   }
 
+
+  /* ===== 농어촌도로 라인 붙이기 ===== */
+  .geometry-edit-toolbar #geometryJoinModeBtn {
+    color: #176b3a;
+    border-color: #9bcfaf;
+    background: #f2fbf5;
+  }
+
+  .geometry-edit-toolbar #geometryJoinModeBtn.active {
+    color: #fff !important;
+    border-color: #34c759 !important;
+    background: #34c759 !important;
+  }
+
 </style>
 
 </head>
@@ -20480,6 +20494,7 @@
         state.markers.forEach(function(marker) {
           marker.setMap(null);
         });
+        clearRoadGeometryJoinMarkers(state);
 
         if (state.previewLine) state.previewLine.setMap(null);
         if (state.previewHitLine) state.previewHitLine.setMap(null);
@@ -21512,23 +21527,166 @@
         });
       }
 
+      function clearRoadGeometryJoinMarkers(state) {
+        if (!state) return;
+        (state.joinMarkers || []).forEach(function(item) {
+          const marker = item && item.marker ? item.marker : item;
+          try { if (marker) marker.setMap(null); } catch (e) {}
+        });
+        state.joinMarkers = [];
+        state.joinSelection = null;
+      }
+
+      function createRoadJoinMarkerImage(selected, currentRoad) {
+        const fill = selected
+          ? "#ff9500"
+          : (currentRoad ? "#e60012" : "#258fff");
+
+        const size = selected ? 24 : 20;
+        const radius = selected ? 9 : 7;
+        const center = size / 2;
+
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+            '<circle cx="' + center + '" cy="' + center + '" r="' + radius + '" fill="' + fill + '" stroke="#ffffff" stroke-width="3"/>' +
+          '</svg>';
+
+        return new kakao.maps.MarkerImage(
+          "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
+          new kakao.maps.Size(size, size),
+          { offset: new kakao.maps.Point(center, center) }
+        );
+      }
+
+      function showRoadGeometryJoinMarkers(state) {
+        if (!state || !state.group || state.group.layerId !== "rural") return;
+
+        clearRoadGeometryJoinMarkers(state);
+
+        state.group.roads.forEach(function(itemRoad, roadIndex) {
+          if (!itemRoad) return;
+
+          const path =
+            itemRoad === state.road
+              ? state.workingPath
+              : (
+                  (state.group.paths && state.group.paths[roadIndex]) ||
+                  itemRoad.pathFine ||
+                  []
+                );
+
+          if (!path || path.length < 2) return;
+
+          [
+            { endpoint: "start", pathIndex: 0, position: path[0] },
+            { endpoint: "end", pathIndex: path.length - 1, position: path[path.length - 1] }
+          ].forEach(function(info) {
+            const isCurrentRoad = itemRoad === state.road;
+
+            const marker = new kakao.maps.Marker({
+              map: map,
+              position: info.position,
+              draggable: false,
+              clickable: true,
+              image: createRoadJoinMarkerImage(false, isCurrentRoad),
+              zIndex: isCurrentRoad ? 232 : 230
+            });
+
+            const record = {
+              marker: marker,
+              road: itemRoad,
+              roadIndex: roadIndex,
+              endpoint: info.endpoint,
+              pathIndex: info.pathIndex,
+              isCurrentRoad: isCurrentRoad
+            };
+
+            kakao.maps.event.addListener(marker, "click", function() {
+              const activeState = roadGeometryEditState;
+              if (!activeState || activeState !== state || activeState.mode !== "join") return;
+
+              kakao.maps.event.preventMap();
+
+              if (!activeState.joinSelection) {
+                if (!record.isCurrentRoad) {
+                  const help = document.getElementById("geometryEditHelp");
+                  if (help) help.textContent = "먼저 현재 편집 중인 빨간 끝점을 선택하세요.";
+                  return;
+                }
+
+                activeState.joinSelection = record;
+                marker.setImage(createRoadJoinMarkerImage(true, true));
+
+                const help = document.getElementById("geometryEditHelp");
+                if (help) help.textContent = "붙일 다른 구간의 파란 끝점을 선택하세요.";
+                return;
+              }
+
+              if (record.isCurrentRoad) {
+                // 현재 라인의 다른 끝점을 누르면 선택 끝점만 바꿈.
+                showRoadGeometryJoinMarkers(activeState);
+                activeState.joinSelection = record;
+                record.marker.setImage(createRoadJoinMarkerImage(true, true));
+
+                const help = document.getElementById("geometryEditHelp");
+                if (help) help.textContent = "붙일 다른 구간의 파란 끝점을 선택하세요.";
+                return;
+              }
+
+              const source = activeState.joinSelection;
+              const targetPosition = marker.getPosition();
+
+              // 현재 선택한 끝점을 다른 구간 끝점의 정확한 좌표로 스냅.
+              activeState.workingPath[source.pathIndex] = new kakao.maps.LatLng(
+                targetPosition.getLat(),
+                targetPosition.getLng()
+              );
+
+              if (activeState.previewLine) {
+                activeState.previewLine.setPath(activeState.workingPath);
+              }
+              if (activeState.previewHitLine) {
+                activeState.previewHitLine.setPath(activeState.workingPath);
+              }
+
+              setRoadEditDirty(true);
+              refreshRoadGroupJoinLines(activeState.group);
+
+              const help = document.getElementById("geometryEditHelp");
+              if (help) help.textContent = "끝점을 붙였습니다. 다른 끝점도 붙이거나 저장하세요.";
+
+              // 결과 위치를 즉시 다시 표시.
+              showRoadGeometryJoinMarkers(activeState);
+            });
+
+            state.joinMarkers.push(record);
+          });
+        });
+      }
+
+
       function setRoadGeometryEditMode(mode) {
         const state = roadGeometryEditState;
         if (!state) return;
 
-        const nextMode =
-          mode === "split" && state.group.layerId === "rural"
-            ? "split"
-            : "vertex";
+        let nextMode = "vertex";
+        if (state.group.layerId === "rural") {
+          if (mode === "split") nextMode = "split";
+          if (mode === "join") nextMode = "join";
+        }
 
         state.mode = nextMode;
 
         const vertexBtn = document.getElementById("geometryVertexModeBtn");
         const splitBtn = document.getElementById("geometrySplitModeBtn");
+        const joinBtn = document.getElementById("geometryJoinModeBtn");
         const help = document.getElementById("geometryEditHelp");
 
         if (vertexBtn) vertexBtn.classList.toggle("active", nextMode === "vertex");
         if (splitBtn) splitBtn.classList.toggle("active", nextMode === "split");
+        if (joinBtn) joinBtn.classList.toggle("active", nextMode === "join");
+
+        clearRoadGeometryJoinMarkers(state);
 
         if (nextMode === "vertex") {
           clearRoadGeometrySplitPreview(state);
@@ -21538,21 +21696,32 @@
             help.textContent = "꼭지점 이동 · 중간 + 클릭 추가 · 중간 꼭지점 우클릭 삭제";
           }
           map.setCursor("");
-        } else {
-          hideGeometryHoverPlus(state, true);
+          return;
+        }
 
-          // 라인 나누기 모드에서는 꼭지점 마커를 숨기고
-          // 분할 위치 선택에만 집중하도록 함.
-          (state.markers || []).forEach(function(marker) {
-            try { marker.setMap(null); } catch (e) {}
-          });
-          state.markers = [];
+        hideGeometryHoverPlus(state, true);
 
+        // 분할/붙이기 모드에서는 일반 꼭지점 마커를 숨김.
+        (state.markers || []).forEach(function(marker) {
+          try { marker.setMap(null); } catch (e) {}
+        });
+        state.markers = [];
+
+        if (nextMode === "split") {
           if (help) {
             help.textContent = "나눌 위치를 현재 라인 위에서 클릭";
           }
           map.setCursor("crosshair");
+          return;
         }
+
+        // 라인 붙이기: 현재 구간의 빨간 끝점 → 같은 노선 다른 구간의 파란 끝점 순서.
+        clearRoadGeometrySplitPreview(state);
+        showRoadGeometryJoinMarkers(state);
+        if (help) {
+          help.textContent = "현재 라인의 빨간 끝점을 선택한 뒤 붙일 파란 끝점을 선택하세요.";
+        }
+        map.setCursor("pointer");
       }
 
       window.setRoadGeometryEditMode = setRoadGeometryEditMode;
@@ -21734,6 +21903,8 @@
           previewLine: previewLine,
           previewHitLine: previewHitLine,
           markers: [],
+          joinMarkers: [],
+          joinSelection: null,
           hoverPlusOverlay: null,
           hoverPlusPosition: null,
           hoverPlusSegmentIndex: null,
@@ -21754,7 +21925,7 @@
           const state = roadGeometryEditState;
           if (!state) return;
 
-          map.setCursor(state.mode === "split" ? "crosshair" : "crosshair");
+          map.setCursor(state.mode === "join" ? "pointer" : "crosshair");
 
           if (state.mode === "vertex" && mouseEvent && mouseEvent.latLng) {
             showGeometryHoverPlus(state, mouseEvent.latLng);
@@ -21802,7 +21973,8 @@
           '<span class="geometry-edit-label" id="geometryEditHelp">꼭지점 이동 · 중간 + 클릭 추가 · 중간 꼭지점 우클릭 삭제</span>' +
           '<button type="button" class="active" id="geometryVertexModeBtn" onclick="setRoadGeometryEditMode(\'vertex\')">꼭지점 편집</button>' +
           (group.layerId === "rural"
-            ? '<button type="button" id="geometrySplitModeBtn" onclick="setRoadGeometryEditMode(\'split\')">라인 나누기</button>'
+            ? '<button type="button" id="geometrySplitModeBtn" onclick="setRoadGeometryEditMode(\'split\')">라인 나누기</button>' +
+              '<button type="button" id="geometryJoinModeBtn" onclick="setRoadGeometryEditMode(\'join\')">라인 붙이기</button>'
             : '') +
           '<button type="button" onclick="cancelRoadGeometryEdit()">취소</button>' +
           '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>';
