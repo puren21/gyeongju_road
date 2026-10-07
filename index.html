@@ -8682,6 +8682,84 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 스카이뷰 정보보기 폭을 버튼과 동일하게 ===== */
+  .sky-info-popover {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    transform: none !important;
+    padding: 9px 8px !important;
+  }
+
+  .sky-info-option {
+    justify-content: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+
+  /* ===== 2026-10-07: 조절바 회색 통일 + 동일 크기 ===== */
+  :root {
+    --drag-handle-gray: rgba(60,60,67,.34);
+    --drag-handle-gray-active: rgba(60,60,67,.58);
+  }
+
+  /* 좌측 메뉴 조절바 */
+  #listResizeHandle::after,
+  #listPanel .list-header::before,
+  #listOpen::before {
+    background: var(--drag-handle-gray) !important;
+  }
+
+  /* 좌측 메뉴 기준 크기로 통일 */
+  @media (max-width:700px) {
+    #listResizeHandle::after,
+    #listPanel .list-header::before {
+      width: 72px !important;
+      height: 9px !important;
+    }
+
+    #listOpen::before {
+      width: 72px !important;
+      height: 9px !important;
+    }
+
+    body.list-resizing #listResizeHandle::after {
+      width: 72px !important;
+      height: 9px !important;
+      background: var(--drag-handle-gray-active) !important;
+    }
+  }
+
+  /* 노선 속성창 하단 조절바도 좌측 메뉴와 동일 크기/색상 */
+  .road-popup .road-popup-resize-handle::before {
+    width: 72px !important;
+    height: 9px !important;
+    background: var(--drag-handle-gray) !important;
+    box-shadow: none !important;
+  }
+
+  .road-popup .road-popup-resize-handle:hover::before,
+  body.road-popup-resizing .road-popup .road-popup-resize-handle::before {
+    width: 72px !important;
+    height: 9px !important;
+    background: var(--drag-handle-gray-active) !important;
+  }
+
+  @media (min-width:701px) {
+    /* PC에서도 두 조절바의 시각적 두께를 같은 회색 계열로 맞춤 */
+    #listResizeHandle::after {
+      background: var(--drag-handle-gray) !important;
+    }
+
+    #listResizeHandle:hover::after,
+    body.list-resizing #listResizeHandle::after {
+      background: var(--drag-handle-gray-active) !important;
+    }
+  }
+
 </style>
 
 </head>
