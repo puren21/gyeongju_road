@@ -12812,6 +12812,7 @@
       let roadviewMiniMarker = null;
       let roadviewDirectionOverlay = null;
       let roadviewDirectionCone = null;
+      let roadviewPopupWindow = null;
 
       const normalBtn = document.getElementById("normalBtn");
       const skyBtn = document.getElementById("skyBtn");
@@ -20495,6 +20496,7 @@
           marker.setMap(null);
         });
         clearRoadGeometryJoinMarkers(state);
+        clearRoadGeometryMergeHitLines(state);
 
         if (state.previewLine) state.previewLine.setMap(null);
         if (state.previewHitLine) state.previewHitLine.setMap(null);
@@ -21665,6 +21667,169 @@
       }
 
 
+      function clearRoadGeometryMergeHitLines(state) {
+        if (!state) return;
+        (state.mergeHitLines || []).forEach(function(line) {
+          try { if (line) line.setMap(null); } catch (e) {}
+        });
+        state.mergeHitLines = [];
+      }
+
+      function mergeRoadPropertyValues(primaryProps, secondaryProps) {
+        const a = Object.assign({}, primaryProps || {});
+        const b = secondaryProps || {};
+
+        function isBlank(value) {
+          return value === null || value === undefined || String(value).trim() === "";
+        }
+
+        function numericValue(value) {
+          if (isBlank(value)) return null;
+          const raw = String(value).replace(/,/g, "").trim();
+          if (!/^-?\d+(?:\.\d+)?$/.test(raw)) return null;
+          const n = Number(raw);
+          return Number.isFinite(n) ? n : null;
+        }
+
+        Object.keys(b).forEach(function(key) {
+          const av = a[key];
+          const bv = b[key];
+
+          if (isBlank(av)) {
+            a[key] = bv;
+            return;
+          }
+          if (isBlank(bv)) return;
+
+          const an = numericValue(av);
+          const bn = numericValue(bv);
+
+          // 양쪽 값이 모두 숫자이면 큰 숫자를 사용.
+          if (an !== null && bn !== null) {
+            const max = Math.max(an, bn);
+            a[key] = Number.isInteger(max) ? String(max) : String(max);
+          }
+        });
+
+        return a;
+      }
+
+      function buildMergedRoadPath(pathA, pathB) {
+        if (!pathA || pathA.length < 2 || !pathB || pathB.length < 2) return null;
+
+        const a0 = pathA[0];
+        const a1 = pathA[pathA.length - 1];
+        const b0 = pathB[0];
+        const b1 = pathB[pathB.length - 1];
+
+        const candidates = [
+          { aEnd:"end", bEnd:"start", distance:roadEditDistanceMeters(a1, b0) },
+          { aEnd:"end", bEnd:"end", distance:roadEditDistanceMeters(a1, b1) },
+          { aEnd:"start", bEnd:"start", distance:roadEditDistanceMeters(a0, b0) },
+          { aEnd:"start", bEnd:"end", distance:roadEditDistanceMeters(a0, b1) }
+        ].sort(function(x, y) { return x.distance - y.distance; });
+
+        const best = candidates[0];
+        let left = pathA.slice();
+        let right = pathB.slice();
+
+        // 결과는 left의 끝과 right의 시작이 만나는 방향으로 정렬.
+        if (best.aEnd === "start") left.reverse();
+        if (best.bEnd === "end") right.reverse();
+
+        const target = right[0];
+        // 두 끝점이 떨어져 있어도 대상 끝점 좌표에 정확히 스냅한 후 병합.
+        left[left.length - 1] = new kakao.maps.LatLng(
+          target.getLat(),
+          target.getLng()
+        );
+
+        // 공통점은 한 번만 남김.
+        return left.concat(right.slice(1));
+      }
+
+      function selectRoadGeometryMergeTarget(state, targetRoad, targetIndex) {
+        if (!state || !targetRoad || targetRoad === state.road) return;
+
+        const targetPath =
+          (state.group.paths && state.group.paths[targetIndex]) ||
+          targetRoad.pathFine ||
+          [];
+
+        if (!targetPath || targetPath.length < 2) return;
+
+        if (!state.mergeOriginalWorkingPath) {
+          state.mergeOriginalWorkingPath = cloneRoadEditPath(state.workingPath);
+        }
+
+        const basePath = cloneRoadEditPath(state.mergeOriginalWorkingPath);
+        const merged = buildMergedRoadPath(basePath, cloneRoadEditPath(targetPath));
+        if (!merged || merged.length < 2) return;
+
+        state.mergeTargetRoad = targetRoad;
+        state.mergeTargetRoadIndex = targetIndex;
+        state.workingPath = merged;
+
+        if (state.previewLine) state.previewLine.setPath(state.workingPath);
+        if (state.previewHitLine) state.previewHitLine.setPath(state.workingPath);
+
+        clearRoadGeometryMergeHitLines(state);
+        setRoadEditDirty(true);
+
+        const help = document.getElementById("geometryEditHelp");
+        if (help) {
+          help.textContent = "두 라인을 하나로 병합했습니다. 저장하면 두 번째 라인은 제거됩니다.";
+        }
+      }
+
+      function showRoadGeometryMergeTargets(state) {
+        if (!state || !state.group || state.group.layerId !== "rural") return;
+
+        clearRoadGeometryMergeHitLines(state);
+
+        state.group.roads.forEach(function(targetRoad, targetIndex) {
+          if (!targetRoad || targetRoad === state.road) return;
+
+          const targetPath =
+            (state.group.paths && state.group.paths[targetIndex]) ||
+            targetRoad.pathFine ||
+            [];
+
+          if (!targetPath || targetPath.length < 2) return;
+
+          const hit = new kakao.maps.Polyline({
+            map: map,
+            path: targetPath,
+            strokeWeight: 34,
+            strokeColor: "#000000",
+            strokeOpacity: 0.01,
+            strokeStyle: "solid",
+            zIndex: 231,
+            clickable: true
+          });
+
+          kakao.maps.event.addListener(hit, "mouseover", function() {
+            if (!roadGeometryEditState || roadGeometryEditState.mode !== "merge") return;
+            map.setCursor("pointer");
+          });
+
+          kakao.maps.event.addListener(hit, "mouseout", function() {
+            if (!roadGeometryEditState || roadGeometryEditState.mode !== "merge") return;
+            map.setCursor("pointer");
+          });
+
+          kakao.maps.event.addListener(hit, "click", function() {
+            const activeState = roadGeometryEditState;
+            if (!activeState || activeState !== state || activeState.mode !== "merge") return;
+            kakao.maps.event.preventMap();
+            selectRoadGeometryMergeTarget(activeState, targetRoad, targetIndex);
+          });
+
+          state.mergeHitLines.push(hit);
+        });
+      }
+
+
       function setRoadGeometryEditMode(mode) {
         const state = roadGeometryEditState;
         if (!state) return;
@@ -21673,6 +21838,7 @@
         if (state.group.layerId === "rural") {
           if (mode === "split") nextMode = "split";
           if (mode === "join") nextMode = "join";
+          if (mode === "merge") nextMode = "merge";
         }
 
         state.mode = nextMode;
@@ -21680,13 +21846,16 @@
         const vertexBtn = document.getElementById("geometryVertexModeBtn");
         const splitBtn = document.getElementById("geometrySplitModeBtn");
         const joinBtn = document.getElementById("geometryJoinModeBtn");
+        const mergeBtn = document.getElementById("geometryMergeModeBtn");
         const help = document.getElementById("geometryEditHelp");
 
         if (vertexBtn) vertexBtn.classList.toggle("active", nextMode === "vertex");
         if (splitBtn) splitBtn.classList.toggle("active", nextMode === "split");
         if (joinBtn) joinBtn.classList.toggle("active", nextMode === "join");
+        if (mergeBtn) mergeBtn.classList.toggle("active", nextMode === "merge");
 
         clearRoadGeometryJoinMarkers(state);
+        clearRoadGeometryMergeHitLines(state);
 
         if (nextMode === "vertex") {
           clearRoadGeometrySplitPreview(state);
@@ -21701,25 +21870,35 @@
 
         hideGeometryHoverPlus(state, true);
 
-        // 분할/붙이기 모드에서는 일반 꼭지점 마커를 숨김.
         (state.markers || []).forEach(function(marker) {
           try { marker.setMap(null); } catch (e) {}
         });
         state.markers = [];
 
         if (nextMode === "split") {
-          if (help) {
-            help.textContent = "나눌 위치를 현재 라인 위에서 클릭";
-          }
+          if (help) help.textContent = "나눌 위치를 현재 라인 위에서 클릭";
           map.setCursor("crosshair");
           return;
         }
 
-        // 라인 붙이기: 현재 구간의 빨간 끝점 → 같은 노선 다른 구간의 파란 끝점 순서.
         clearRoadGeometrySplitPreview(state);
-        showRoadGeometryJoinMarkers(state);
+
+        if (nextMode === "join") {
+          showRoadGeometryJoinMarkers(state);
+          if (help) {
+            help.textContent = "현재 라인의 빨간 끝점을 선택한 뒤 붙일 파란 끝점을 선택하세요.";
+          }
+          map.setCursor("pointer");
+          return;
+        }
+
+        // 병합: 현재 편집 중인 라인이 첫 번째 라인, 지도에서 같은 노선의 두 번째 라인을 선택.
+        state.mergeOriginalWorkingPath = cloneRoadEditPath(state.workingPath);
+        state.mergeTargetRoad = null;
+        state.mergeTargetRoadIndex = -1;
+        showRoadGeometryMergeTargets(state);
         if (help) {
-          help.textContent = "현재 라인의 빨간 끝점을 선택한 뒤 붙일 파란 끝점을 선택하세요.";
+          help.textContent = "현재 빨간 라인이 첫 번째 라인입니다. 병합할 같은 노선의 두 번째 라인을 클릭하세요.";
         }
         map.setCursor("pointer");
       }
@@ -21905,6 +22084,10 @@
           markers: [],
           joinMarkers: [],
           joinSelection: null,
+          mergeHitLines: [],
+          mergeTargetRoad: null,
+          mergeTargetRoadIndex: -1,
+          mergeOriginalWorkingPath: null,
           hoverPlusOverlay: null,
           hoverPlusPosition: null,
           hoverPlusSegmentIndex: null,
@@ -21974,7 +22157,8 @@
           '<button type="button" class="active" id="geometryVertexModeBtn" onclick="setRoadGeometryEditMode(\'vertex\')">꼭지점 편집</button>' +
           (group.layerId === "rural"
             ? '<button type="button" id="geometrySplitModeBtn" onclick="setRoadGeometryEditMode(\'split\')">라인 나누기</button>' +
-              '<button type="button" id="geometryJoinModeBtn" onclick="setRoadGeometryEditMode(\'join\')">라인 붙이기</button>'
+              '<button type="button" id="geometryJoinModeBtn" onclick="setRoadGeometryEditMode(\'join\')">라인 붙이기</button>' +
+              '<button type="button" id="geometryMergeModeBtn" onclick="setRoadGeometryEditMode(\'merge\')">라인 병합</button>'
             : '') +
           '<button type="button" onclick="cancelRoadGeometryEdit()">취소</button>' +
           '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>';
@@ -22060,6 +22244,12 @@
             state.splitPosition &&
             Number.isInteger(state.splitSegmentIndex);
 
+          const hasMerge =
+            state.group.layerId === "rural" &&
+            state.mode === "merge" &&
+            state.mergeTargetRoad &&
+            state.mergeTargetRoadIndex >= 0;
+
           let savedPrimaryPath = path.slice();
           let savedSecondaryPath = null;
 
@@ -22081,6 +22271,37 @@
             savedSecondaryPath[0] = sharedSplitPoint;
           }
 
+          if (hasMerge) {
+            const mergedProperties = mergeRoadPropertyValues(
+              road.properties || {},
+              state.mergeTargetRoad.properties || {}
+            );
+
+            // 같은 노선번호는 유지.
+            ["number", "NUMBER", "노선번호"].forEach(function(key) {
+              if (key in mergedProperties) mergedProperties[key] = group.number;
+            });
+
+            // 차선/도로폭 등 숫자 속성은 큰 값이 적용된 뒤 노선상태를 다시 자동판정.
+            const mergedGubun = String(
+              mergedProperties.GUBUN ||
+              mergedProperties["구분"] ||
+              getRoadGroupTypeLabel(group)
+            );
+            const mergedLane = mergedProperties["차선"];
+            const mergedWidth = mergedProperties["도로폭"];
+            setPropertyValue(
+              mergedProperties,
+              ["기타","Opened","Opend","개설여부"],
+              "기타",
+              classifyRuralRoadStatus(mergedGubun, mergedLane, mergedWidth)
+            );
+
+            road.properties = mergedProperties;
+            road.statusKey = getRoadStatusKey(road.properties, group.layerId);
+            road.styleKey = getStyleKey(road.properties, group.layerId);
+          }
+
           const tolerance = getDisplaySimplifyTolerance(road.styleKey);
           road.pathFine = savedPrimaryPath;
           road.pathMedium = simplifyLatLngPath(savedPrimaryPath, tolerance * 3.2);
@@ -22100,6 +22321,33 @@
             });
 
           applyRoadPathTier(road, getRoadPathTier());
+
+          if (hasMerge) {
+            const targetRoad = state.mergeTargetRoad;
+            const targetIndexNow = group.roads.indexOf(targetRoad);
+
+            if (targetIndexNow >= 0) {
+              removeRoadObjectFromMap(targetRoad);
+              group.roads.splice(targetIndexNow, 1);
+              group.paths.splice(targetIndexNow, 1);
+              group.propertiesList.splice(targetIndexNow, 1);
+            }
+
+            // 삭제로 인덱스가 당겨졌을 수 있으므로 현재 라인의 인덱스를 다시 계산.
+            state.roadIndex = group.roads.indexOf(road);
+            if (state.roadIndex < 0) state.roadIndex = 0;
+
+            group.paths[state.roadIndex] = savedPrimaryPath.slice();
+            group.propertiesList[state.roadIndex] = road.properties;
+
+            selectedRoadSegmentIndex = state.roadIndex;
+            selectedRoadObject = road;
+            if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
+              selectedRoadPopupState.road = road;
+            }
+
+            refreshRoadGroupJoinLines(group);
+          }
 
           if (hasSplit && savedSecondaryPath && savedSecondaryPath.length >= 2) {
             const secondProperties = Object.assign({}, road.properties || {});
@@ -22184,7 +22432,7 @@
           payload.geometries[String(state.roadIndex)] =
             serializeRoadGeometryPath(savedPrimaryPath);
 
-          if (group.layerId === "rural" && (hasSplit || Array.isArray(payload.segmentModel))) {
+          if (group.layerId === "rural" && (hasSplit || hasMerge || Array.isArray(payload.segmentModel))) {
             payload.version = 3;
             payload.segmentModel = serializeRoadGroupSegments(group);
             payload.geometries = {};
@@ -23388,6 +23636,7 @@
 
       /*
        * 로드뷰 켜기와 끄기
+       * 로드뷰 화면은 본 지도 내부가 아니라 별도 브라우저 팝업창으로 표시함.
        */
       roadviewBtn.onclick = function () {
         if (roadviewMode) {
@@ -23397,107 +23646,155 @@
         }
       };
 
+      function ensureRoadviewPopup() {
+        if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
+          try {
+            roadviewPopupWindow.focus();
+          } catch (e) {}
+          return roadviewPopupWindow;
+        }
+
+        const width = Math.min(1180, Math.max(760, Math.round(screen.availWidth * 0.62)));
+        const height = Math.min(860, Math.max(560, Math.round(screen.availHeight * 0.72)));
+
+        let left = Math.round((screen.availWidth - width) / 2);
+        let top = Math.round((screen.availHeight - height) / 2);
+
+        try {
+          // 주 지도창과 겹침을 줄이기 위해 현재 창의 오른쪽으로 우선 배치함.
+          if (window.screenX !== undefined) {
+            const candidate = window.screenX + window.outerWidth + 12;
+            if (candidate + width <= screen.availLeft + screen.availWidth) {
+              left = candidate;
+              top = Math.max(screen.availTop, window.screenY || top);
+            }
+          }
+        } catch (e) {}
+
+        roadviewPopupWindow = window.open(
+          "",
+          "gyeongjuRoadviewPopup",
+          "popup=yes,width=" + width +
+          ",height=" + height +
+          ",left=" + left +
+          ",top=" + top +
+          ",resizable=yes,scrollbars=no"
+        );
+
+        if (!roadviewPopupWindow) {
+          alert("로드뷰 팝업창이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용해 주세요.");
+          return null;
+        }
+
+        const popupHtml = `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>경주시 도로현황 · 로드뷰</title>
+<style>
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+#bar{position:absolute;left:0;right:0;top:0;height:42px;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 14px;box-sizing:border-box;background:rgba(255,255,255,.97);border-bottom:1px solid #d9dde3}
+#title{font-size:14px;font-weight:800;color:#222}
+#status{margin-left:12px;flex:1;min-width:0;color:#70757a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#closeBtn{width:56px;height:28px;border:1px solid #d3d7dc;border-radius:6px;background:#fff;color:#333;cursor:pointer}
+#roadview{position:absolute;left:0;right:0;top:42px;bottom:0}
+#loading{position:absolute;inset:42px 0 0 0;z-index:15;display:flex;align-items:center;justify-content:center;color:#fff;background:#202124;font-size:14px}
+
+  /* ===== 2026-10-07: 로드뷰는 별도 브라우저 팝업창 사용 ===== */
+  #roadviewPanel {
+    display: none !important;
+  }
+
+
+  /* ===== 농어촌도로 라인 병합 ===== */
+  .geometry-edit-toolbar #geometryMergeModeBtn {
+    color: #6d3f00;
+    border-color: #d8b36d;
+    background: #fff9ec;
+  }
+
+  .geometry-edit-toolbar #geometryMergeModeBtn.active {
+    color: #fff !important;
+    border-color: #ff9500 !important;
+    background: #ff9500 !important;
+  }
+
+</style>
+</head>
+<body>
+<div id="bar">
+  <div id="title">로드뷰</div>
+  <div id="status">지도에서 위치를 선택하세요.</div>
+  <button id="closeBtn" type="button">닫기</button>
+</div>
+<div id="roadview"></div>
+<div id="loading">로드뷰를 준비하고 있습니다…</div>
+<script>
+(function(){
+  var roadview = null;
+  var pending = null;
+  var ready = false;
+
+  window.setRoadviewPano = function(panoId, lat, lng) {
+    pending = { panoId:panoId, lat:lat, lng:lng };
+    if (!ready || !roadview) return;
+    var position = new kakao.maps.LatLng(Number(lat), Number(lng));
+    roadview.setPanoId(Number(panoId), position);
+    document.getElementById("status").textContent =
+      Number(lat).toFixed(6) + ", " + Number(lng).toFixed(6);
+    document.getElementById("loading").style.display = "none";
+  };
+
+  document.getElementById("closeBtn").onclick = function(){ window.close(); };
+
+  var script = document.createElement("script");
+  script.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=7ee4bab8cd4d6be6d0d68a49e9b4502b&autoload=false";
+  script.onload = function() {
+    kakao.maps.load(function() {
+      roadview = new kakao.maps.Roadview(document.getElementById("roadview"));
+      ready = true;
+      document.getElementById("loading").textContent = "지도에서 위치를 선택하세요.";
+      if (pending) window.setRoadviewPano(pending.panoId, pending.lat, pending.lng);
+    });
+  };
+  script.onerror = function() {
+    document.getElementById("loading").textContent = "카카오 로드뷰를 불러오지 못했습니다.";
+  };
+  document.head.appendChild(script);
+})();
+<\/script>
+</body>
+</html>`;
+
+        roadviewPopupWindow.document.open();
+        roadviewPopupWindow.document.write(popupHtml);
+        roadviewPopupWindow.document.close();
+
+        try {
+          roadviewPopupWindow.focus();
+        } catch (e) {}
+
+        return roadviewPopupWindow;
+      }
+
       function startRoadview() {
         if (roadWidthMeasureMode) stopRoadWidthMeasure();
+
         if (!roadviewOverlay) {
-          roadviewOverlay =
-            new kakao.maps.RoadviewOverlay();
+          roadviewOverlay = new kakao.maps.RoadviewOverlay();
+        }
 
-          roadviewClient =
-            new kakao.maps.RoadviewClient();
-
-          roadview =
-            new kakao.maps.Roadview(
-              document.getElementById("roadview")
-            );
-
-          roadviewMiniMap = new kakao.maps.Map(
-            document.getElementById("roadviewMiniMap"),
-            {
-              center: map.getCenter(),
-              level: 1
-            }
-          );
-
-          // 로드뷰 미니맵은 하이브리드로 시작하고 가능한 최대 확대(level 1)로 고정함.
-          roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
-          try {
-            if (typeof roadviewMiniMap.setMinLevel === "function") {
-              roadviewMiniMap.setMinLevel(1);
-            }
-            if (typeof roadviewMiniMap.setMaxLevel === "function") {
-              roadviewMiniMap.setMaxLevel(1);
-            }
-          } catch (e) {}
-          roadviewMiniMap.setLevel(1, { animate: false });
-
-          roadviewMiniMarker = new kakao.maps.Marker({
-            position: map.getCenter(),
-            map: null
-          });
-
-          const directionMarker = document.createElement("div");
-          directionMarker.className = "roadview-direction-marker";
-          directionMarker.innerHTML =
-            '<div class="roadview-direction-cone"></div>' +
-            '<div class="roadview-direction-dot"></div>';
-          roadviewDirectionCone =
-            directionMarker.querySelector(".roadview-direction-cone");
-
-          roadviewDirectionOverlay = new kakao.maps.CustomOverlay({
-            position: map.getCenter(),
-            content: directionMarker,
-            xAnchor: 0,
-            yAnchor: 0
-          });
-          roadviewDirectionOverlay.setMap(roadviewMiniMap);
-
-          const syncRoadviewMiniMap = function () {
-            if (!roadviewMiniMap || !roadviewDirectionOverlay) return;
-            const currentPosition = roadview.getPosition();
-            if (!currentPosition) return;
-            roadviewDirectionOverlay.setPosition(currentPosition);
-            roadviewMiniMap.setCenter(currentPosition);
-            if (roadviewMiniMap.getLevel() !== 1) {
-              roadviewMiniMap.setLevel(1, { animate: false });
-            }
-          };
-
-          const syncRoadviewDirection = function () {
-            if (!roadviewDirectionCone || !roadview) return;
-            const viewpoint = roadview.getViewpoint();
-            const pan = viewpoint && Number.isFinite(Number(viewpoint.pan))
-              ? Number(viewpoint.pan)
-              : 0;
-            roadviewDirectionCone.style.transform =
-              "translate(-50%, -100%) rotate(" + pan + "deg)";
-          };
-
-          kakao.maps.event.addListener(
-            roadview,
-            "position_changed",
-            syncRoadviewMiniMap
-          );
-
-          kakao.maps.event.addListener(
-            roadview,
-            "pano_changed",
-            function () {
-              syncRoadviewMiniMap();
-              syncRoadviewDirection();
-            }
-          );
-
-          kakao.maps.event.addListener(
-            roadview,
-            "viewpoint_changed",
-            syncRoadviewDirection
-          );
+        if (!roadviewClient) {
+          roadviewClient = new kakao.maps.RoadviewClient();
         }
 
         roadviewMode = true;
         roadviewOverlay.setMap(map);
         roadviewBtn.classList.add("active");
+
+        // 로드뷰 버튼을 누른 사용자 동작 안에서 팝업을 먼저 열어 팝업차단 가능성을 줄임.
+        ensureRoadviewPopup();
 
         infoWindow.close();
         resetSelection();
@@ -23511,14 +23808,20 @@
           roadviewOverlay.setMap(null);
         }
 
+        if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
+          try { roadviewPopupWindow.close(); } catch (e) {}
+        }
+        roadviewPopupWindow = null;
+
         closeRoadviewPanel();
       }
 
       /*
        * 로드뷰 열기
+       * 메인 지도에서 위치 선택 후 별도 팝업창의 로드뷰를 갱신함.
        */
       function openRoadview(position) {
-        if (!roadviewMode || !roadviewClient) {
+        if (!roadviewMode || !roadviewClient || !position) {
           return;
         }
 
@@ -23530,35 +23833,41 @@
               return;
             }
 
-            roadviewPanel.style.display = "block";
+            const popup = ensureRoadviewPopup();
+            if (!popup) return;
 
-            setTimeout(function () {
-              roadview.relayout();
-              if (roadviewMiniMap) {
-                roadviewMiniMap.relayout();
-                roadviewMiniMap.setCenter(position);
-                roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
-                roadviewMiniMap.setLevel(1, { animate: false });
-              }
-              if (roadviewDirectionOverlay) {
-                roadviewDirectionOverlay.setPosition(position);
-              }
-              roadview.setPanoId(
-                panoId,
-                position
-              );
-            }, 0);
+            const lat = position.getLat();
+            const lng = position.getLng();
+
+            function sendPano() {
+              if (!roadviewPopupWindow || roadviewPopupWindow.closed) return false;
+              try {
+                if (typeof roadviewPopupWindow.setRoadviewPano === "function") {
+                  roadviewPopupWindow.setRoadviewPano(panoId, lat, lng);
+                  roadviewPopupWindow.focus();
+                  return true;
+                }
+              } catch (e) {}
+              return false;
+            }
+
+            if (!sendPano()) {
+              let attempts = 0;
+              const timer = setInterval(function() {
+                attempts += 1;
+                if (sendPano() || attempts >= 40) {
+                  clearInterval(timer);
+                }
+              }, 100);
+            }
           }
         );
       }
 
       /*
-       * 로드뷰 창 닫기
-       * 파란색 로드뷰 도로는 유지
+       * 기존 내부 로드뷰 패널은 더 이상 화면에 표시하지 않음.
        */
-      document.getElementById(
-        "roadviewClose"
-      ).onclick = function () {
+      document.getElementById("roadviewClose").onclick = function () {
         closeRoadviewPanel();
       };
 
