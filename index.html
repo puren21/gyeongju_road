@@ -8186,6 +8186,146 @@
     line-height: 1.35;
   }
 
+
+  /* ===== 2026-10-07: 도로구간 메뉴 한 줄 + 펼침형 ===== */
+  #roadMenuRoadPage .road-dataset-manager {
+    margin-bottom: 10px !important;
+  }
+
+  #roadMenuRoadPage .road-compact-card,
+  #roadMenuRoadPage .road-github-card.road-compact-card,
+  #roadMenuRoadPage .road-dataset-card.road-compact-card {
+    margin: 0 0 7px !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border-radius: 12px !important;
+    background: #fff !important;
+  }
+
+  #roadMenuRoadPage .road-compact-head {
+    width: 100%;
+    min-width: 0;
+    height: 46px;
+    box-sizing: border-box;
+    padding: 0 11px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto) 18px;
+    align-items: center;
+    column-gap: 7px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  #roadMenuRoadPage .road-compact-head-github {
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto) 18px;
+  }
+
+  #roadMenuRoadPage .road-compact-title,
+  #roadMenuRoadPage .road-dataset-check-label {
+    min-width: 0;
+    margin: 0 !important;
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+    font-weight: 600 !important;
+    color: #1c1c1e !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #roadMenuRoadPage .road-dataset-check-label {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    cursor: pointer;
+  }
+
+  #roadMenuRoadPage .road-dataset-check-label span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #roadMenuRoadPage .road-dataset-check-label input {
+    flex: 0 0 auto;
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  #roadMenuRoadPage .road-dataset-status,
+  #roadMenuRoadPage .road-github-status {
+    min-width: 0;
+    max-width: 108px;
+    margin: 0 !important;
+    font-size: 10.5px !important;
+    line-height: 1.2 !important;
+    font-weight: 550 !important;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #roadMenuRoadPage .road-compact-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #a0a0a5;
+    font-size: 23px;
+    font-weight: 300;
+    line-height: 1;
+    transform: rotate(0deg);
+    transition: transform .18s ease;
+  }
+
+  #roadMenuRoadPage .road-compact-card.expanded .road-compact-chevron {
+    transform: rotate(90deg);
+  }
+
+  #roadMenuRoadPage .road-compact-body {
+    box-sizing: border-box;
+    padding: 0 10px 10px;
+    border-top: .5px solid rgba(60,60,67,.12);
+  }
+
+  #roadMenuRoadPage .road-compact-body[hidden] {
+    display: none !important;
+  }
+
+  #roadMenuRoadPage .road-compact-body .road-dataset-actions {
+    min-height: 0 !important;
+    padding: 9px 0 0 !important;
+  }
+
+  #roadMenuRoadPage .road-compact-body .road-github-repo {
+    margin: 8px 0 7px !important;
+  }
+
+  #roadMenuRoadPage .road-compact-body .road-github-token-row {
+    margin-top: 0 !important;
+  }
+
+  @media (max-width:700px) {
+    #roadMenuRoadPage .road-compact-head {
+      height: 48px;
+      padding: 0 10px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, auto) 18px;
+      column-gap: 6px;
+    }
+
+    #roadMenuRoadPage .road-compact-title,
+    #roadMenuRoadPage .road-dataset-check-label {
+      font-size: 14px !important;
+    }
+
+    #roadMenuRoadPage .road-dataset-status,
+    #roadMenuRoadPage .road-github-status {
+      max-width: 92px;
+      font-size: 10px !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -15109,50 +15249,61 @@
         manager.innerHTML =
           '<div class="road-dataset-heading">도로구간</div>' +
 
-          '<div class="road-github-card">' +
-            '<div class="road-github-title">GitHub 저장 설정</div>' +
-            '<div class="road-github-repo">puren21 / gyeongju_road · main</div>' +
-            '<div class="road-github-token-row">' +
-              '<input id="roadGithubToken" type="password" autocomplete="off" placeholder="GitHub 토큰을 한 번만 입력">' +
-              '<button id="roadGithubTokenRemember" type="button">저장</button>' +
+          '<div class="road-github-card road-compact-card" data-compact-card="github">' +
+            '<div class="road-compact-head road-compact-head-github" data-road-compact-toggle="github" role="button" tabindex="0" aria-expanded="false">' +
+              '<span class="road-compact-title">GitHub 저장 설정</span>' +
+              '<span id="roadGithubConnectionStatus" class="road-github-status">인증정보 확인 중</span>' +
+              '<span class="road-compact-chevron" aria-hidden="true">›</span>' +
             '</div>' +
-            '<div class="road-github-control-row">' +
-              '<button id="roadGithubTest" type="button">연결 확인</button>' +
-              '<button id="roadGithubForget" type="button">인증정보 삭제</button>' +
+            '<div class="road-compact-body" data-road-compact-body="github" hidden>' +
+              '<div class="road-github-repo">puren21 / gyeongju_road · main</div>' +
+              '<div class="road-github-token-row">' +
+                '<input id="roadGithubToken" type="password" autocomplete="off" placeholder="GitHub 토큰을 한 번만 입력">' +
+                '<button id="roadGithubTokenRemember" type="button">저장</button>' +
+              '</div>' +
+              '<div class="road-github-control-row">' +
+                '<button id="roadGithubTest" type="button">연결 확인</button>' +
+                '<button id="roadGithubForget" type="button">인증정보 삭제</button>' +
+              '</div>' +
+              '<div class="road-github-help">한 번 저장하면 이 브라우저에서 계속 사용합니다. 인증정보는 index.html에 포함되지 않습니다.</div>' +
             '</div>' +
-            '<div id="roadGithubConnectionStatus" class="road-github-status">인증정보 확인 중</div>' +
-            '<div class="road-github-help">한 번 저장하면 이 브라우저에서 계속 사용합니다. 인증정보는 index.html에 포함되지 않습니다.</div>' +
           '</div>' +
 
-          '<div class="road-dataset-card" data-dataset="base">' +
-            '<div class="road-dataset-row">' +
+          '<div class="road-dataset-card road-compact-card" data-dataset="base" data-compact-card="base">' +
+            '<div class="road-compact-head" data-road-compact-toggle="base" role="button" tabindex="0" aria-expanded="false">' +
               '<label class="road-dataset-check-label">' +
                 '<input id="baseRoadDatasetCheck" type="checkbox" checked>' +
                 '<span>기존 도로구간</span>' +
               '</label>' +
               '<span id="baseRoadDatasetStatus" class="road-dataset-status">비어 있음</span>' +
+              '<span class="road-compact-chevron" aria-hidden="true">›</span>' +
             '</div>' +
-            '<div class="road-dataset-actions">' +
-              '<label class="road-dataset-file-btn">파일 불러오기' +
-                '<input id="baseRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
-              '</label>' +
-              '<button id="baseRoadDatasetSave" type="button">저장</button>' +
+            '<div class="road-compact-body" data-road-compact-body="base" hidden>' +
+              '<div class="road-dataset-actions">' +
+                '<label class="road-dataset-file-btn">파일 불러오기' +
+                  '<input id="baseRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
+                '</label>' +
+                '<button id="baseRoadDatasetSave" type="button">저장</button>' +
+              '</div>' +
             '</div>' +
           '</div>' +
 
-          '<div class="road-dataset-card" data-dataset="changed">' +
-            '<div class="road-dataset-row">' +
+          '<div class="road-dataset-card road-compact-card" data-dataset="changed" data-compact-card="changed">' +
+            '<div class="road-compact-head" data-road-compact-toggle="changed" role="button" tabindex="0" aria-expanded="false">' +
               '<label class="road-dataset-check-label">' +
                 '<input id="changedRoadDatasetCheck" type="checkbox" checked>' +
                 '<span>변경 도로구간</span>' +
               '</label>' +
               '<span id="changedRoadDatasetStatus" class="road-dataset-status">현재 데이터</span>' +
+              '<span class="road-compact-chevron" aria-hidden="true">›</span>' +
             '</div>' +
-            '<div class="road-dataset-actions">' +
-              '<label class="road-dataset-file-btn">파일 불러오기' +
-                '<input id="changedRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
-              '</label>' +
-              '<button id="changedRoadDatasetSave" type="button">저장</button>' +
+            '<div class="road-compact-body" data-road-compact-body="changed" hidden>' +
+              '<div class="road-dataset-actions">' +
+                '<label class="road-dataset-file-btn">파일 불러오기' +
+                  '<input id="changedRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
+                '</label>' +
+                '<button id="changedRoadDatasetSave" type="button">저장</button>' +
+              '</div>' +
             '</div>' +
           '</div>';
 
@@ -15173,6 +15324,55 @@
         const tokenRemember = document.getElementById("roadGithubTokenRemember");
         const tokenTest = document.getElementById("roadGithubTest");
         const tokenForget = document.getElementById("roadGithubForget");
+
+        function setRoadCompactExpanded(name, expanded) {
+          const head = manager.querySelector(
+            '[data-road-compact-toggle="' + name + '"]'
+          );
+          const body = manager.querySelector(
+            '[data-road-compact-body="' + name + '"]'
+          );
+          const card = manager.querySelector(
+            '[data-compact-card="' + name + '"]'
+          );
+
+          if (!head || !body || !card) return;
+
+          const open = !!expanded;
+          head.setAttribute("aria-expanded", open ? "true" : "false");
+          body.hidden = !open;
+          card.classList.toggle("expanded", open);
+        }
+
+        manager.querySelectorAll("[data-road-compact-toggle]").forEach(function(head) {
+          const name = head.dataset.roadCompactToggle;
+
+          function toggleCompact(event) {
+            if (
+              event &&
+              event.target &&
+              event.target.closest("input, label, button, a")
+            ) {
+              return;
+            }
+
+            const expanded = head.getAttribute("aria-expanded") === "true";
+            setRoadCompactExpanded(name, !expanded);
+          }
+
+          head.addEventListener("click", toggleCompact);
+          head.addEventListener("keydown", function(event) {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            if (
+              event.target &&
+              event.target.closest("input, label, button, a")
+            ) {
+              return;
+            }
+            event.preventDefault();
+            toggleCompact(event);
+          });
+        });
 
         clearLegacyRoadDatasetStorage();
 
