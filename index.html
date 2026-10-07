@@ -9070,6 +9070,12 @@
     line-height: 26px !important;
   }
 
+
+  /* ===== 2026-10-07: 도로폭 자동 보정(실폭 -0.5m, 0.5m 단위) ===== */
+  .road-width-result-row:last-child strong {
+    color: #258fff !important;
+  }
+
 </style>
 
 </head>
@@ -11748,6 +11754,15 @@
         };
       }
 
+      function roundRoadWidthToHalfMeter(value) {
+        return Math.max(0, Math.round(Number(value) * 2) / 2);
+      }
+
+      function correctedRoadWidthFromActual(actualWidth) {
+        // 실폭에서 0.5m를 차감한 뒤 0.5m 단위로 반올림
+        return roundRoadWidthToHalfMeter(Math.max(0, Number(actualWidth) - 0.5));
+      }
+
       function renderRoadWidthResult(center, normal, candidate) {
         clearRoadWidthResult();
 
@@ -11784,10 +11799,26 @@
           }));
         });
 
-        // 2) 보정선은 자동 측정값에서 시작하고 사용자가 끝점을 직접 조정
+        // 2) 보정폭 = (실폭 - 0.5m)을 0.5m 단위로 반올림
+        const correctedWidth = correctedRoadWidthFromActual(candidate.width);
+        const actualMiddleT = (candidate.a + candidate.b) / 2;
+        const correctedA = actualMiddleT - correctedWidth / 2;
+        const correctedB = actualMiddleT + correctedWidth / 2;
+
+        const correctedLeft = roadWidthLocalToLatLng(
+          normal.x * correctedA,
+          normal.y * correctedA,
+          center
+        );
+        const correctedRight = roadWidthLocalToLatLng(
+          normal.x * correctedB,
+          normal.y * correctedB,
+          center
+        );
+
         roadWidthCorrectedLine = new kakao.maps.Polyline({
           map: map,
-          path: [actualLeft, actualRight],
+          path: [correctedLeft, correctedRight],
           strokeWeight: 4,
           strokeColor: "#258fff",
           strokeOpacity: 0.96,
@@ -11795,30 +11826,9 @@
           zIndex: 190
         });
 
-        const markerImage = roadWidthMarkerImage();
-        [actualLeft, actualRight].forEach(function(position, index) {
-          const marker = new kakao.maps.Marker({
-            map: map,
-            position: position,
-            draggable: true,
-            image: markerImage,
-            zIndex: 194
-          });
-
-          kakao.maps.event.addListener(marker, "drag", function() {
-            updateRoadWidthCorrectedGeometry(index, marker.getPosition());
-          });
-
-          kakao.maps.event.addListener(marker, "dragend", function() {
-            updateRoadWidthCorrectedGeometry(index, marker.getPosition());
-          });
-
-          roadWidthCorrectedMarkers.push(marker);
-        });
-
         const panelRefs = createRoadWidthResultPanel(
           candidate.width,
-          candidate.width
+          correctedWidth
         );
 
         roadWidthResultState = {
@@ -11827,9 +11837,9 @@
           actualA: candidate.a,
           actualB: candidate.b,
           actualWidth: candidate.width,
-          correctedA: candidate.a,
-          correctedB: candidate.b,
-          correctedWidth: candidate.width,
+          correctedA: correctedA,
+          correctedB: correctedB,
+          correctedWidth: correctedWidth,
           panel: panelRefs.panel,
           actualRow: panelRefs.actualRow,
           actualRadio: panelRefs.actualRadio,
@@ -11842,8 +11852,8 @@
         };
 
         const middle = roadWidthLocalToLatLng(
-          normal.x * ((candidate.a + candidate.b) / 2),
-          normal.y * ((candidate.a + candidate.b) / 2),
+          normal.x * actualMiddleT,
+          normal.y * actualMiddleT,
           center
         );
 
@@ -11860,7 +11870,7 @@
 
         if (roadWidthMeasureMode) {
           roadWidthHint.querySelector("span").textContent =
-            "파란 끝점을 실제 통행 가능한 도로 경계로 드래그하세요. 우클릭하면 종료됩니다.";
+            "실폭과 자동 보정폭을 확인하세요. 마우스 우클릭하면 도로폭 측정을 종료합니다.";
         }
       }
 
