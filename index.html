@@ -9440,6 +9440,115 @@
     color: #222 !important;
   }
 
+
+  /* ===== 라인편집 아이콘 툴바 ===== */
+  .geometry-edit-toolbar {
+    overflow: visible !important;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn {
+    position: relative;
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    padding: 6px !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d6d9de !important;
+    border-radius: 7px !important;
+    background: #fff !important;
+    color: #4d5660 !important;
+    box-sizing: border-box;
+    cursor: pointer;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn:hover {
+    background: #f1f6fc !important;
+    border-color: #9abce1 !important;
+    color: #2169a7 !important;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn.active {
+    background: #258fff !important;
+    border-color: #258fff !important;
+    color: #fff !important;
+  }
+
+  .geometry-edit-toolbar .geometry-delete-icon {
+    color: #b42318 !important;
+  }
+
+  .geometry-edit-toolbar .geometry-delete-icon:hover {
+    color: #b42318 !important;
+    border-color: #e1a6a0 !important;
+    background: #fff4f2 !important;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn.save {
+    color: #248a3d !important;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn.save:hover {
+    border-color: #8fc8a0 !important;
+    background: #f0faf3 !important;
+    color: #1f7a36 !important;
+  }
+
+  .geometry-edit-toolbar .geometry-toolbar-close {
+    color: #666 !important;
+    font-size: 0 !important;
+    line-height: normal !important;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 8px);
+    z-index: 99999;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(31,35,40,.94);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, -2px);
+    transition: opacity .12s ease, transform .12s ease, visibility .12s ease;
+    pointer-events: none;
+  }
+
+  .geometry-edit-toolbar .geometry-icon-btn[data-tooltip]:hover::after,
+  .geometry-edit-toolbar .geometry-icon-btn[data-tooltip]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+  }
+
+  @media (max-width:700px) {
+    .geometry-edit-toolbar .geometry-icon-btn {
+      width: 38px !important;
+      min-width: 38px !important;
+      height: 38px !important;
+      padding: 7px !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -22798,15 +22907,27 @@
         const state = roadGeometryEditState;
         if (!state) return;
 
-        let nextMode = "vertex";
+        const allowedModes = ["vertex"];
         if (state.group.layerId === "rural") {
-          if (mode === "split") nextMode = "split";
-          if (mode === "join") nextMode = "join";
-          if (mode === "merge") nextMode = "merge";
-          if (mode === "add") nextMode = "add";
+          allowedModes.push("split", "join", "merge", "add");
         }
+        if (allowedModes.indexOf(mode) === -1) return;
 
+        const nextMode = mode;
         state.mode = nextMode;
+
+        // 실제 라인편집은 기능 버튼을 처음 누르는 순간부터 시작함.
+        geometryEditingGroupKey = state.groupKey;
+        removeSelectedRouteBalloon();
+        updateLabels();
+
+        // 원본 선택선은 숨기고 편집용 선/클릭영역을 활성화.
+        getRoadVisualLines(state.road).forEach(function(line) {
+          if (line && line.getMap()) line.setMap(null);
+        });
+
+        if (state.previewLine) state.previewLine.setMap(map);
+        if (state.previewHitLine) state.previewHitLine.setMap(map);
 
         const vertexBtn = document.getElementById("geometryVertexModeBtn");
         const splitBtn = document.getElementById("geometrySplitModeBtn");
@@ -22997,12 +23118,9 @@
           return;
         }
 
-        // 선형 편집 시작 순간부터 기존 굵은 선택 강조를 차단함.
-        geometryEditingGroupKey = groupKey;
-        removeSelectedRouteBalloon();
-
-        // 선형편집 중에는 노선 라벨을 표시하지 않음.
-        updateLabels();
+        // 상단 라인편집 메뉴는 표시하되, 사용자가 기능 버튼을 누르기 전에는
+        // 지도 선형에 아무 편집 동작도 시작하지 않음.
+        geometryEditingGroupKey = null;
 
         // 일반지도와 동일한 확대/이동 방식을 사용하면서 선택 구간을 유지
         focusSelectedRoadForEditing(groupKey, road);
@@ -23021,7 +23139,7 @@
         });
 
         const previewLine = new kakao.maps.Polyline({
-          map: map,
+          map: null,
           path: workingPath,
           strokeWeight: 1,
           strokeColor: "#e60012",
@@ -23033,7 +23151,7 @@
 
         // 보이는 선은 1px로 유지하고, 클릭 판정만 넓은 투명선을 별도로 사용함.
         const previewHitLine = new kakao.maps.Polyline({
-          map: map,
+          map: null,
           path: workingPath,
           strokeWeight: 44,
           strokeColor: "#000000",
@@ -23043,19 +23161,13 @@
           clickable: true
         });
 
-        // 기존 도로 원본선과 선택 강조선은 숨기고,
-        // 편집용 1px 선만 표시함.
-        getRoadVisualLines(road).forEach(function(line) {
-          if (line && line.getMap()) line.setMap(null);
-        });
-
         roadGeometryEditState = {
           groupKey: groupKey,
           group: group,
           road: road,
           roadIndex: roadIndex,
           selectedSegmentOnly: true,
-          mode: "vertex",
+          mode: "idle",
           originalPath: originalPath,
           workingPath: workingPath,
           splitSegmentIndex: null,
@@ -23094,7 +23206,7 @@
           }]
         };
 
-        rebuildRoadGeometryEditMarkers(roadGeometryEditState);
+        // 기능 버튼을 누르기 전에는 꼭지점/클릭영역을 만들지 않음.
 
         kakao.maps.event.addListener(previewHitLine, "mouseover", function(mouseEvent) {
           const state = roadGeometryEditState;
@@ -23145,21 +23257,39 @@
         toolbar.id = "geometryEditToolbar";
         toolbar.className = "geometry-edit-toolbar integrated";
         toolbar.innerHTML =
-          '<span class="geometry-edit-label" id="geometryEditHelp">꼭지점 이동 · 중간 + 클릭 추가 · 중간 꼭지점 우클릭 삭제</span>' +
-          '<button type="button" class="active" id="geometryVertexModeBtn" onclick="setRoadGeometryEditMode(\'vertex\')">꼭지점 편집</button>' +
+          '<span class="geometry-edit-label" id="geometryEditHelp">라인편집 기능을 선택하세요.</span>' +
+          '<button type="button" class="geometry-icon-btn" id="geometryVertexModeBtn" data-tooltip="꼭지점 편집" title="꼭지점 편집" aria-label="꼭지점 편집" onclick="setRoadGeometryEditMode(\'vertex\')">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M7 18l5-7 5 7"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="17" cy="18" r="2"/></svg>' +
+          '</button>' +
           (group.layerId === "rural"
-            ? '<button type="button" id="geometrySplitModeBtn" onclick="setRoadGeometryEditMode(\'split\')">라인 나누기</button>' +
-              '<button type="button" id="geometryJoinModeBtn" onclick="setRoadGeometryEditMode(\'join\')">라인 붙이기</button>' +
-              '<button type="button" id="geometryMergeModeBtn" onclick="setRoadGeometryEditMode(\'merge\')">라인 병합</button>' +
-              '<button type="button" id="geometryAddModeBtn" onclick="setRoadGeometryEditMode(\'add\')">라인 추가</button>' +
-              '<button type="button" id="geometryDeleteBtn" onclick="deleteCurrentRoadGeometry()">라인 삭제</button>'
+            ? '<button type="button" class="geometry-icon-btn" id="geometrySplitModeBtn" data-tooltip="라인 나누기" title="라인 나누기" aria-label="라인 나누기" onclick="setRoadGeometryEditMode(\'split\')">' +
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h6M14 12h6"/><path d="M9 6l6 12M15 6L9 18"/><circle cx="8" cy="5" r="2"/><circle cx="16" cy="19" r="2"/></svg>' +
+              '</button>' +
+              '<button type="button" class="geometry-icon-btn" id="geometryJoinModeBtn" data-tooltip="라인 붙이기" title="라인 붙이기" aria-label="라인 붙이기" onclick="setRoadGeometryEditMode(\'join\')">' +
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h7l2 4 2-4h7"/><path d="M3 16h7l2-4 2 4h7"/><circle cx="3" cy="8" r="2"/><circle cx="21" cy="8" r="2"/><circle cx="3" cy="16" r="2"/><circle cx="21" cy="16" r="2"/></svg>' +
+              '</button>' +
+              '<button type="button" class="geometry-icon-btn" id="geometryMergeModeBtn" data-tooltip="라인 병합" title="라인 병합" aria-label="라인 병합" onclick="setRoadGeometryEditMode(\'merge\')">' +
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h5c3 0 3 6 6 6h5"/><path d="M4 18h5c3 0 3-6 6-6"/><path d="M17 9l3 3-3 3"/></svg>' +
+              '</button>' +
+              '<button type="button" class="geometry-icon-btn" id="geometryAddModeBtn" data-tooltip="라인 추가" title="라인 추가" aria-label="라인 추가" onclick="setRoadGeometryEditMode(\'add\')">' +
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-6 5 3"/><circle cx="4" cy="17" r="2"/><circle cx="9" cy="11" r="2"/><circle cx="14" cy="14" r="2"/><path d="M18 4v8M14 8h8"/></svg>' +
+              '</button>' +
+              '<button type="button" class="geometry-icon-btn geometry-delete-icon" id="geometryDeleteBtn" data-tooltip="라인 삭제" title="라인 삭제" aria-label="라인 삭제" onclick="deleteCurrentRoadGeometry()">' +
+                '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M8 7l1 13h6l1-13M11 10v7M14 10v7"/></svg>' +
+              '</button>'
             : '') +
-          '<button type="button" onclick="cancelRoadGeometryEdit()">취소</button>' +
-          '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>' +
-          '<button type="button" class="geometry-toolbar-close" title="라인편집 닫기" aria-label="라인편집 닫기" onclick="closeRoadGeometryEditToolbar()">×</button>';
+          '<button type="button" class="geometry-icon-btn" data-tooltip="취소" title="취소" aria-label="취소" onclick="cancelRoadGeometryEdit()">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7l-5 5 5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg>' +
+          '</button>' +
+          '<button type="button" class="geometry-icon-btn save" id="saveRoadGeometryBtn" data-tooltip="저장" title="저장" aria-label="저장" onclick="saveRoadGeometryEdit({ keepEditing: true })">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>' +
+          '</button>' +
+          '<button type="button" class="geometry-icon-btn geometry-toolbar-close" data-tooltip="라인편집 닫기" title="라인편집 닫기" aria-label="라인편집 닫기" onclick="closeRoadGeometryEditToolbar()">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
+          '</button>';
         document.body.appendChild(toolbar);
         enableGeometryEditToolbarDrag(toolbar);
-        setRoadGeometryEditMode("vertex");
+        map.setCursor("");
       }
 
       window.startRoadGeometryEdit = startRoadGeometryEdit;
@@ -23173,6 +23303,10 @@
         const group = state.group;
         const road = state.road;
         const saveButton = document.getElementById("saveRoadGeometryBtn");
+
+        if (state.mode === "idle") {
+          return true;
+        }
 
         // 선형편집 중에도 현재 편집창의 속성값을 함께 저장함.
         const editForm = document.getElementById("roadEditForm");
