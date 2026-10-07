@@ -8391,26 +8391,6 @@
   }
 
 
-  /* ===== 2026-10-07: 라인편집 메뉴 연한 초록색 ===== */
-  .road-popup .road-inline-line-edit-section {
-    background: #e9f7ed !important;
-    box-shadow: 0 0 0 .5px rgba(52,199,89,.22) !important;
-  }
-
-  .road-popup .road-inline-line-edit-open {
-    background: #e9f7ed !important;
-    color: #1f7a3a !important;
-  }
-
-  .road-popup .road-inline-line-edit-open:active {
-    background: #dcf2e3 !important;
-  }
-
-  .road-popup .road-inline-line-edit-chevron {
-    color: #34c759 !important;
-  }
-
-
     /* ===== 로드뷰 우상단 모서리 크기조절 ===== */
     #roadviewResizeHandle.roadview-resize-handle {
       position: absolute;
@@ -20026,15 +20006,6 @@
 
           editForm.dataset.dirtyBound = "1";
         }
-
-        const lineEditBtn = popup.querySelector("#startGeometryEditBtn");
-        if (lineEditBtn) {
-          lineEditBtn.onclick = function(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            startRoadGeometryEdit(groupKey);
-          };
-        }
       }
 
       function openRoadEditor(groupKey) {
@@ -24621,13 +24592,7 @@
       }
 
       function roadLineEditBlock(group) {
-        if (roadEditSessionGroupKey !== group.key) return "";
-        return '<div class="road-inline-line-edit-section">' +
-          '<button type="button" class="road-inline-line-edit-open" id="startGeometryEditBtn">' +
-            '<span>라인편집</span>' +
-            '<span class="road-inline-line-edit-chevron">›</span>' +
-          '</button>' +
-        '</div>';
+        return "";
       }
 
       function roadPopupActions(group) {
