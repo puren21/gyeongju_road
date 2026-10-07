@@ -9205,6 +9205,12 @@
     }
   }
 
+
+  /* ===== 로드뷰 초기 실행: 내부 미니맵 제거 ===== */
+  #roadviewPanel #roadviewMiniMapWrap {
+    display: none !important;
+  }
+
 </style>
 
 </head>
@@ -24525,55 +24531,14 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           document.getElementById("roadview")
         );
 
-        if (!roadviewMiniMap) {
-          roadviewMiniMap = new kakao.maps.Map(
-            document.getElementById("roadviewMiniMap"),
-            {
-              center: map.getCenter(),
-              level: 1
-            }
-          );
+        // 좌하단 로드뷰는 미니맵 없이 로드뷰 화면만 표시함.
 
-          roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
-          try {
-            if (typeof roadviewMiniMap.setMinLevel === "function") roadviewMiniMap.setMinLevel(1);
-            if (typeof roadviewMiniMap.setMaxLevel === "function") roadviewMiniMap.setMaxLevel(1);
-          } catch (e) {}
-          roadviewMiniMap.setLevel(1, { animate: false });
-
-          const directionMarker = document.createElement("div");
-          directionMarker.className = "roadview-direction-marker";
-          directionMarker.innerHTML =
-            '<div class="roadview-direction-cone"></div>' +
-            '<div class="roadview-direction-dot"></div>';
-
-          roadviewDirectionCone =
-            directionMarker.querySelector(".roadview-direction-cone");
-
-          roadviewDirectionOverlay = new kakao.maps.CustomOverlay({
-            position: map.getCenter(),
-            content: directionMarker,
-            xAnchor: 0,
-            yAnchor: 0
-          });
-          roadviewDirectionOverlay.setMap(roadviewMiniMap);
-        }
 
         function syncEmbeddedPosition() {
           if (!roadview) return;
           const currentPosition = roadview.getPosition();
           if (!currentPosition) return;
 
-          if (roadviewMiniMap) {
-            roadviewMiniMap.setCenter(currentPosition);
-            if (roadviewMiniMap.getLevel() !== 1) {
-              roadviewMiniMap.setLevel(1, { animate: false });
-            }
-          }
-
-          if (roadviewDirectionOverlay) {
-            roadviewDirectionOverlay.setPosition(currentPosition);
-          }
 
           const viewpoint = roadview.getViewpoint ? roadview.getViewpoint() : null;
           const pan = viewpoint && Number.isFinite(Number(viewpoint.pan))
@@ -24612,11 +24577,6 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
 
         setTimeout(function() {
           if (roadview) roadview.relayout();
-          if (roadviewMiniMap) {
-            roadviewMiniMap.relayout();
-            roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
-            roadviewMiniMap.setLevel(1, { animate: false });
-          }
         }, 0);
       }
 
@@ -24691,14 +24651,6 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
               roadview.setPanoId(panoId, position);
             }
 
-            if (roadviewMiniMap) {
-              roadviewMiniMap.setCenter(position);
-              roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
-              roadviewMiniMap.setLevel(1, { animate: false });
-            }
-            if (roadviewDirectionOverlay) {
-              roadviewDirectionOverlay.setPosition(position);
-            }
 
             // 사용자가 별도 팝업을 열어 둔 경우 팝업도 같은 위치로 동기화.
             function sendPanoToPopup() {
