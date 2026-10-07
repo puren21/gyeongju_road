@@ -9161,8 +9161,8 @@
     right: auto !important;
     bottom: 15px !important;
     top: auto !important;
-    width: min(460px, calc(100vw - 30px)) !important;
-    height: min(320px, calc(100vh - 30px)) !important;
+    width: min(460px, calc(100vw - 30px));
+    height: min(320px, calc(100vh - 30px));
     min-width: 300px;
     min-height: 220px;
     overflow: visible;
@@ -9198,8 +9198,8 @@
       left: 8px !important;
       right: auto !important;
       bottom: 8px !important;
-      width: min(360px, calc(100vw - 16px)) !important;
-      height: min(260px, calc(100vh - 16px)) !important;
+      width: min(360px, calc(100vw - 16px));
+      height: min(260px, calc(100vh - 16px));
       min-width: 240px;
       min-height: 180px;
     }
@@ -9387,6 +9387,57 @@
       border-radius: 999px;
       background: rgba(37,143,255,.55);
     }
+  }
+
+
+  /* ===== 로드뷰 크기조절 손잡이 최종 보정 ===== */
+  #roadviewPanel {
+    box-sizing: border-box;
+  }
+
+  #roadviewResizeHandle.roadview-resize-handle {
+    position: absolute !important;
+    top: -14px !important;
+    right: -14px !important;
+    left: auto !important;
+    width: 48px !important;
+    height: 48px !important;
+    z-index: 220 !important;
+    cursor: nesw-resize !important;
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    pointer-events: auto !important;
+    background: transparent !important;
+  }
+
+  #roadviewResizeHandle.roadview-resize-handle::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    left: auto !important;
+    width: 18px !important;
+    height: 18px !important;
+    border-top: 4px solid rgba(37,136,246,.98) !important;
+    border-right: 4px solid rgba(37,136,246,.98) !important;
+    border-left: 0 !important;
+    border-bottom: 0 !important;
+    border-radius: 0 3px 0 0 !important;
+    box-sizing: border-box !important;
+    pointer-events: none !important;
+  }
+
+  #roadviewResizeHandle.roadview-resize-handle:hover {
+    background: rgba(37,136,246,.10) !important;
+  }
+
+  body.roadview-resizing #roadviewResizeHandle.roadview-resize-handle {
+    background: rgba(37,136,246,.16) !important;
+  }
+
+  body.roadview-resizing #roadviewPanel {
+    transition: none !important;
   }
 
 </style>
@@ -13370,8 +13421,8 @@
           roadviewPanel.style.right = "auto";
           roadviewPanel.style.top = "auto";
           roadviewPanel.style.bottom = fixedBottom + "px";
-          roadviewPanel.style.width = startWidth + "px";
-          roadviewPanel.style.height = startHeight + "px";
+          roadviewPanel.style.setProperty("width", startWidth + "px", "important");
+          roadviewPanel.style.setProperty("height", startHeight + "px", "important");
 
           document.body.classList.add("roadview-resizing");
 
@@ -13391,8 +13442,16 @@
             startHeight - (event.clientY - startY)
           );
 
-          roadviewPanel.style.width = Math.round(next.width) + "px";
-          roadviewPanel.style.height = Math.round(next.height) + "px";
+          roadviewPanel.style.setProperty(
+            "width",
+            Math.round(next.width) + "px",
+            "important"
+          );
+          roadviewPanel.style.setProperty(
+            "height",
+            Math.round(next.height) + "px",
+            "important"
+          );
           relayoutRoadviewAfterResize();
 
           event.preventDefault();
@@ -13414,6 +13473,65 @@
         window.addEventListener("pointermove", moveResize, { passive: false });
         window.addEventListener("pointerup", finishResize);
         window.addEventListener("pointercancel", finishResize);
+
+        let mouseFallbackActive = false;
+
+        roadviewResizeHandle.addEventListener("mousedown", function(event) {
+          if (window.PointerEvent) return;
+          if (event.button !== 0) return;
+
+          const rect = roadviewPanel.getBoundingClientRect();
+          mouseFallbackActive = true;
+          startX = event.clientX;
+          startY = event.clientY;
+          startWidth = rect.width;
+          startHeight = rect.height;
+          fixedLeft = Math.max(0, rect.left);
+          fixedBottom = Math.max(0, window.innerHeight - rect.bottom);
+
+          document.body.classList.add("roadview-resizing");
+          event.preventDefault();
+          event.stopPropagation();
+        });
+
+        window.addEventListener("mousemove", function(event) {
+          if (!mouseFallbackActive) return;
+
+          const next = clampSize(
+            startWidth + (event.clientX - startX),
+            startHeight - (event.clientY - startY)
+          );
+
+          roadviewPanel.style.setProperty(
+            "width",
+            Math.round(next.width) + "px",
+            "important"
+          );
+          roadviewPanel.style.setProperty(
+            "height",
+            Math.round(next.height) + "px",
+            "important"
+          );
+
+          relayoutRoadviewAfterResize();
+          event.preventDefault();
+        }, { passive: false });
+
+        window.addEventListener("mouseup", function() {
+          if (!mouseFallbackActive) return;
+          mouseFallbackActive = false;
+          document.body.classList.remove("roadview-resizing");
+          relayoutRoadviewAfterResize();
+        });
+
+        window.addEventListener("blur", function() {
+          if (resizing) finishResize();
+          if (mouseFallbackActive) {
+            mouseFallbackActive = false;
+            document.body.classList.remove("roadview-resizing");
+            relayoutRoadviewAfterResize();
+          }
+        });
       }
 
       installRoadviewResize();
