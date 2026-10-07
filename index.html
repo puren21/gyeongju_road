@@ -8077,6 +8077,78 @@
     }
   }
 
+
+  /* ===== 2026-10-07: GitHub 도로구간 직접 저장 ===== */
+  #roadMenuRoadPage .road-github-card {
+    margin: 0 0 10px;
+    padding: 11px 12px;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 0 0 .5px rgba(60,60,67,.14);
+  }
+
+  #roadMenuRoadPage .road-github-title {
+    margin-bottom: 8px;
+    color: #1c1c1e;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  #roadMenuRoadPage .road-github-token-row {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) 72px;
+    gap: 7px;
+  }
+
+  #roadMenuRoadPage #roadGithubToken {
+    min-width: 0;
+    height: 38px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border: 1px solid #d1d1d6;
+    border-radius: 9px;
+    outline: none;
+    background: #f9f9fb;
+    color: #1c1c1e;
+    font-size: 13px;
+  }
+
+  #roadMenuRoadPage #roadGithubToken:focus {
+    border-color: #34c759;
+    background: #fff;
+  }
+
+  #roadMenuRoadPage #roadGithubTokenRemember {
+    height: 38px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 9px;
+    background: #34c759;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  #roadMenuRoadPage .road-github-repo {
+    margin-top: 7px;
+    color: #8e8e93;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  @media (max-width:700px) {
+    #roadMenuRoadPage #roadGithubToken {
+      height: 42px;
+      font-size: 16px;
+    }
+
+    #roadMenuRoadPage #roadGithubTokenRemember {
+      height: 42px;
+      font-size: 12.5px;
+    }
+  }
+
 </style>
 
 </head>
@@ -14376,53 +14448,32 @@
       }
 
       async function loadGeoJSON(layerId) {
-        let data = null;
-        let sourceName = LAYERS[layerId].file;
-
-        // 농어촌도로의 "변경 도로구간"은 사용자가 저장한 GeoJSON이 있으면
-        // 해당 데이터를 우선 사용하고, 없으면 기존 roads.geojson을 사용함.
-        if (layerId === "rural") {
-          try {
-            const savedText = localStorage.getItem("gyeongjuChangedRoadGeoJSON");
-            if (savedText) {
-              const savedData = JSON.parse(savedText);
-              if (
-                savedData &&
-                savedData.type === "FeatureCollection" &&
-                Array.isArray(savedData.features)
-              ) {
-                data = savedData;
-                sourceName = "저장된 변경 도로구간";
-              }
-            }
-          } catch (error) {
-            console.warn("저장된 변경 도로구간을 읽지 못했습니다.", error);
-          }
-        }
-
-        if (!data) {
-          const response =
-            await fetch(LAYERS[layerId].file, {
-              cache: "force-cache",
+        // 서버(GitHub Pages)에 배포된 파일만 읽음.
+        // 브라우저에 예전에 저장된 대용량 GeoJSON은 사용하지 않음.
+        const response =
+          await fetch(
+            LAYERS[layerId].file + "?v=" + Date.now(),
+            {
+              cache: "no-store",
               credentials: "same-origin"
-            });
+            }
+          );
 
-          if (!response.ok) {
-            throw new Error(
-              LAYERS[layerId].file +
-              " 불러오기 실패"
-            );
-          }
-
-          data = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            LAYERS[layerId].file +
+            " 불러오기 실패"
+          );
         }
+
+        const data = await response.json();
 
         if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
-          throw new Error(sourceName + " 형식이 올바른 GeoJSON FeatureCollection이 아닙니다.");
+          throw new Error(LAYERS[layerId].file + " 형식이 올바른 GeoJSON FeatureCollection이 아닙니다.");
         }
 
         const skipped = await processRoadFeaturesInChunks(data.features, layerId);
-        if (skipped) console.warn(sourceName + ": 표시하지 못한 Feature " + skipped + "개");
+        if (skipped) console.warn(LAYERS[layerId].file + ": 표시하지 못한 Feature " + skipped + "개");
       }
 
       function addFeature(feature, layerId) {
@@ -14481,8 +14532,168 @@
         });
       }
 
+      // ===== GitHub 도로구간 파일 저장 =====
+      // GitHub Pages의 정적 파일은 브라우저가 직접 수정할 수 없으므로
+      // GitHub Contents API를 이용해 저장소 파일 자체를 통째로 교체함.
+      const GYEONGJU_GITHUB = {
+        owner: "puren21",
+        repo: "gyeongju_road",
+        branch: "main",
+        basePath: "roads_original.geojson",
+        changedPath: "roads.geojson"
+      };
+
+      function getRoadGithubToken() {
+        const input = document.getElementById("roadGithubToken");
+        const direct = input ? String(input.value || "").trim() : "";
+        if (direct) return direct;
+        try {
+          return String(sessionStorage.getItem("gyeongjuGithubToken") || "").trim();
+        } catch (e) {
+          return "";
+        }
+      }
+
+      function rememberRoadGithubToken(token) {
+        const value = String(token || "").trim();
+        if (!value) return;
+        try {
+          sessionStorage.setItem("gyeongjuGithubToken", value);
+        } catch (e) {}
+      }
+
+      function roadGithubHeaders(token) {
+        return {
+          "Accept": "application/vnd.github+json",
+          "Authorization": "Bearer " + token,
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json"
+        };
+      }
+
+      function roadUtf8ToBase64(textValue) {
+        const bytes = new TextEncoder().encode(String(textValue || ""));
+        let binary = "";
+        const chunkSize = 0x8000;
+
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, Math.min(bytes.length, i + chunkSize));
+          let part = "";
+          for (let j = 0; j < chunk.length; j++) {
+            part += String.fromCharCode(chunk[j]);
+          }
+          binary += part;
+        }
+
+        return btoa(binary);
+      }
+
+      async function getGithubFileSha(pathName, token) {
+        const url =
+          "https://api.github.com/repos/" +
+          encodeURIComponent(GYEONGJU_GITHUB.owner) + "/" +
+          encodeURIComponent(GYEONGJU_GITHUB.repo) + "/contents/" +
+          pathName.split("/").map(encodeURIComponent).join("/") +
+          "?ref=" + encodeURIComponent(GYEONGJU_GITHUB.branch) +
+          "&_=" + Date.now();
+
+        const response = await fetch(url, {
+          method: "GET",
+          headers: roadGithubHeaders(token),
+          cache: "no-store"
+        });
+
+        if (response.status === 404) return null;
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(
+            "GitHub 파일 확인 실패 (" + response.status + ")" +
+            (detail ? "\\n" + detail : "")
+          );
+        }
+
+        const data = await response.json();
+        return data && data.sha ? String(data.sha) : null;
+      }
+
+      async function overwriteGithubRoadFile(pathName, geojson, token, message) {
+        if (!token) {
+          throw new Error(
+            "GitHub 저장 토큰이 필요합니다.\\n도로목록의 GitHub 저장 설정에서 토큰을 입력해 주세요."
+          );
+        }
+
+        const sha = await getGithubFileSha(pathName, token);
+        const contentText = JSON.stringify(geojson);
+        const payload = {
+          message: message,
+          content: roadUtf8ToBase64(contentText),
+          branch: GYEONGJU_GITHUB.branch
+        };
+
+        // GitHub Contents API는 기존 파일 덮어쓰기 시 SHA가 필요하지만,
+        // 내용은 읽거나 합치지 않고 새 GeoJSON 전체로 완전히 교체함.
+        if (sha) payload.sha = sha;
+
+        const url =
+          "https://api.github.com/repos/" +
+          encodeURIComponent(GYEONGJU_GITHUB.owner) + "/" +
+          encodeURIComponent(GYEONGJU_GITHUB.repo) + "/contents/" +
+          pathName.split("/").map(encodeURIComponent).join("/");
+
+        const response = await fetch(url, {
+          method: "PUT",
+          headers: roadGithubHeaders(token),
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(
+            "GitHub 저장 실패 (" + response.status + ")" +
+            (detail ? "\\n" + detail : "")
+          );
+        }
+
+        return await response.json();
+      }
+
+      async function fetchOptionalRoadGeoJSON(fileName) {
+        try {
+          const response = await fetch(
+            encodeURI(fileName) + "?v=" + Date.now(),
+            { cache: "no-store", credentials: "same-origin" }
+          );
+          if (!response.ok) {
+            if (response.status === 404) return null;
+            throw new Error(fileName + " HTTP " + response.status);
+          }
+          const data = await response.json();
+          if (
+            !data ||
+            data.type !== "FeatureCollection" ||
+            !Array.isArray(data.features)
+          ) {
+            throw new Error(fileName + " 형식 오류");
+          }
+          return data;
+        } catch (error) {
+          console.warn(fileName + " 불러오기 실패", error);
+          return null;
+        }
+      }
+
+      function clearLegacyRoadDatasetStorage() {
+        try {
+          localStorage.removeItem("gyeongjuBaseRoadGeoJSON");
+          localStorage.removeItem("gyeongjuChangedRoadGeoJSON");
+        } catch (e) {}
+      }
+
       // ===== 기존 도로구간 비교 레이어 =====
       const baseRoadDatasetShapes = [];
+      let loadedBaseRoadGeoJSON = null;
       let pendingBaseRoadGeoJSON = null;
       let pendingChangedRoadGeoJSON = null;
 
@@ -14669,25 +14880,12 @@
       }
 
       function savedBaseRoadData() {
-        try {
-          const raw = localStorage.getItem("gyeongjuBaseRoadGeoJSON");
-          if (!raw) return null;
-          const data = JSON.parse(raw);
-          return data && data.type === "FeatureCollection" ? data : null;
-        } catch (e) {
-          return null;
-        }
+        return loadedBaseRoadGeoJSON;
       }
 
       function savedChangedRoadData() {
-        try {
-          const raw = localStorage.getItem("gyeongjuChangedRoadGeoJSON");
-          if (!raw) return null;
-          const data = JSON.parse(raw);
-          return data && data.type === "FeatureCollection" ? data : null;
-        } catch (e) {
-          return null;
-        }
+        // 변경 도로구간은 roads.geojson이 현재 서버의 기준 데이터임.
+        return null;
       }
 
       function updateRoadDatasetManagerStatus() {
@@ -14719,6 +14917,69 @@
         }
       }
 
+      async function replaceChangedRoadDatasetNow(data) {
+        if (
+          !data ||
+          data.type !== "FeatureCollection" ||
+          !Array.isArray(data.features)
+        ) return;
+
+        // 현재 농어촌도로 선택/편집 상태 종료
+        if (
+          roadEditSessionGroupKey &&
+          groups.get(roadEditSessionGroupKey) &&
+          groups.get(roadEditSessionGroupKey).layerId === "rural"
+        ) {
+          finishRoadEditSession(roadEditSessionGroupKey);
+        }
+
+        closeRoadPopup();
+        clearSelectedRoadHighlight();
+
+        // 기존 변경 도로구간 객체를 지도와 메모리에서 완전히 제거
+        (LAYERS.rural.labels || []).forEach(function(item) {
+          if (item && item.overlay) item.overlay.setMap(null);
+        });
+        (LAYERS.rural.shapes || []).forEach(function(shape) {
+          if (shape && shape.setMap) shape.setMap(null);
+        });
+
+        LAYERS.rural.labels.length = 0;
+        LAYERS.rural.shapes.length = 0;
+
+        for (let i = allRoads.length - 1; i >= 0; i--) {
+          if (allRoads[i] && allRoads[i].layerId === "rural") {
+            allRoads.splice(i, 1);
+          }
+        }
+
+        Array.from(groups.keys()).forEach(function(key) {
+          const group = groups.get(key);
+          if (group && group.layerId === "rural") {
+            groups.delete(key);
+            hiddenRoadGroups.delete(key);
+          }
+        });
+
+        ruralTotalLengths.clear();
+
+        await processRoadFeaturesInChunks(data.features, "rural");
+
+        buildGroupLabels();
+        makeLists();
+
+        allRoads.forEach(function(road) {
+          if (road.layerId === "rural") {
+            road._visible = false;
+            road._visualTier = null;
+          }
+        });
+
+        applyRoadVisibility();
+        updateLabels();
+        updateRoadDatasetManagerStatus();
+      }
+
       function installRoadDatasetManager() {
         const roadPage = document.getElementById("roadMenuRoadPage");
         if (!roadPage || document.getElementById("roadDatasetManager")) return;
@@ -14728,6 +14989,15 @@
         manager.className = "road-dataset-manager";
         manager.innerHTML =
           '<div class="road-dataset-heading">도로구간</div>' +
+
+          '<div class="road-github-card">' +
+            '<div class="road-github-title">GitHub 저장 설정</div>' +
+            '<div class="road-github-token-row">' +
+              '<input id="roadGithubToken" type="password" autocomplete="off" placeholder="GitHub 토큰 입력">' +
+              '<button id="roadGithubTokenRemember" type="button">세션 저장</button>' +
+            '</div>' +
+            '<div class="road-github-repo">puren21 / gyeongju_road · main</div>' +
+          '</div>' +
 
           '<div class="road-dataset-card" data-dataset="base">' +
             '<div class="road-dataset-row">' +
@@ -14774,6 +15044,30 @@
         const changedFile = document.getElementById("changedRoadDatasetFile");
         const baseSave = document.getElementById("baseRoadDatasetSave");
         const changedSave = document.getElementById("changedRoadDatasetSave");
+        const tokenInput = document.getElementById("roadGithubToken");
+        const tokenRemember = document.getElementById("roadGithubTokenRemember");
+
+        clearLegacyRoadDatasetStorage();
+
+        try {
+          const rememberedToken =
+            sessionStorage.getItem("gyeongjuGithubToken") || "";
+          if (tokenInput && rememberedToken) {
+            tokenInput.value = rememberedToken;
+          }
+        } catch (e) {}
+
+        if (tokenRemember) {
+          tokenRemember.addEventListener("click", function() {
+            const token = tokenInput ? String(tokenInput.value || "").trim() : "";
+            if (!token) {
+              alert("GitHub 토큰을 입력해 주세요.");
+              return;
+            }
+            rememberRoadGithubToken(token);
+            alert("이 브라우저 탭을 닫기 전까지 GitHub 토큰을 유지합니다.");
+          });
+        }
 
         try {
           baseRoadDatasetVisible =
@@ -14814,54 +15108,110 @@
           }
         });
 
-        baseSave.addEventListener("click", function() {
+        baseSave.addEventListener("click", async function() {
           if (!pendingBaseRoadGeoJSON) {
             alert("먼저 기존 도로구간 GeoJSON 파일을 불러와 주세요.");
             return;
           }
 
+          const token = getRoadGithubToken();
+          if (!token) {
+            alert("GitHub 토큰을 입력한 후 저장해 주세요.");
+            if (tokenInput) tokenInput.focus();
+            return;
+          }
+
+          rememberRoadGithubToken(token);
+          baseSave.disabled = true;
+          baseSave.textContent = "저장 중";
+
           try {
-            localStorage.setItem(
-              "gyeongjuBaseRoadGeoJSON",
-              JSON.stringify(pendingBaseRoadGeoJSON)
+            await overwriteGithubRoadFile(
+              GYEONGJU_GITHUB.basePath,
+              pendingBaseRoadGeoJSON,
+              token,
+              "Update original road segments"
             );
-            drawBaseRoadDataset(pendingBaseRoadGeoJSON);
+
+            loadedBaseRoadGeoJSON = pendingBaseRoadGeoJSON;
             pendingBaseRoadGeoJSON = null;
+            drawBaseRoadDataset(loadedBaseRoadGeoJSON);
             updateRoadDatasetManagerStatus();
-            alert("기존 도로구간을 저장했습니다.");
+
+            alert(
+              "기존 도로구간을 GitHub의 " +
+              GYEONGJU_GITHUB.basePath +
+              " 파일로 저장했습니다."
+            );
           } catch (error) {
-            alert("기존 도로구간 저장에 실패했습니다.\\n\\n" + error.message);
+            console.error(error);
+            alert("기존 도로구간 GitHub 저장에 실패했습니다.\\n\\n" + error.message);
+          } finally {
+            baseSave.disabled = false;
+            baseSave.textContent = "저장";
           }
         });
 
-        changedSave.addEventListener("click", function() {
+        changedSave.addEventListener("click", async function() {
           if (!pendingChangedRoadGeoJSON) {
             alert("먼저 변경 도로구간 GeoJSON 파일을 불러와 주세요.");
             return;
           }
 
-          try {
-            localStorage.setItem(
-              "gyeongjuChangedRoadGeoJSON",
-              JSON.stringify(pendingChangedRoadGeoJSON)
-            );
-            pendingChangedRoadGeoJSON = null;
-            updateRoadDatasetManagerStatus();
+          const token = getRoadGithubToken();
+          if (!token) {
+            alert("GitHub 토큰을 입력한 후 저장해 주세요.");
+            if (tokenInput) tokenInput.focus();
+            return;
+          }
 
-            // 변경 데이터는 전체 노선/목록/편집 구조에 연결되어 있으므로
-            // 저장 후 새로고침하여 완전하게 반영함.
-            alert("변경 도로구간을 저장했습니다. 저장된 데이터로 지도를 다시 불러옵니다.");
-            location.reload();
+          rememberRoadGithubToken(token);
+          changedSave.disabled = true;
+          changedSave.textContent = "저장 중";
+
+          try {
+            const replacingData = pendingChangedRoadGeoJSON;
+
+            await overwriteGithubRoadFile(
+              GYEONGJU_GITHUB.changedPath,
+              replacingData,
+              token,
+              "Replace changed road segments"
+            );
+
+            // 서버 기존 roads.geojson의 내용은 합치지 않고 새 파일 전체로 교체.
+            pendingChangedRoadGeoJSON = null;
+
+            // GitHub Pages 배포를 기다리지 않고 현재 지도에도 즉시 같은 데이터 적용.
+            await replaceChangedRoadDatasetNow(replacingData);
+
+            alert(
+              "변경 도로구간 저장 완료\\n\\n" +
+              "GitHub의 " + GYEONGJU_GITHUB.changedPath +
+              " 파일을 새 데이터로 완전히 교체했습니다.\\n" +
+              "현재 지도에도 바로 반영했습니다."
+            );
           } catch (error) {
-            alert("변경 도로구간 저장에 실패했습니다.\\n\\n" + error.message);
+            console.error(error);
+            alert("변경 도로구간 GitHub 저장에 실패했습니다.\\n\\n" + error.message);
+          } finally {
+            changedSave.disabled = false;
+            changedSave.textContent = "저장";
           }
         });
 
-        const savedBase = savedBaseRoadData();
-        if (savedBase) drawBaseRoadDataset(savedBase);
-        setBaseRoadDatasetVisible(baseRoadDatasetVisible);
-        setChangedRoadDatasetVisible(changedRoadDatasetVisible);
-        updateRoadDatasetManagerStatus();
+        (async function() {
+          loadedBaseRoadGeoJSON =
+            await fetchOptionalRoadGeoJSON(GYEONGJU_GITHUB.basePath);
+
+          if (loadedBaseRoadGeoJSON) {
+            drawBaseRoadDataset(loadedBaseRoadGeoJSON);
+          }
+
+          setBaseRoadDatasetVisible(baseRoadDatasetVisible);
+          setChangedRoadDatasetVisible(changedRoadDatasetVisible);
+          updateRoadDatasetManagerStatus();
+        })();
       }
 
       window.installRoadDatasetManager = installRoadDatasetManager;
