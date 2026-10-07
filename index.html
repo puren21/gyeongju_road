@@ -7958,6 +7958,16 @@
     opacity: .5 !important;
   }
 
+
+  /* ===== 2026-10-07: 저장 아이콘 항상 초록색 ===== */
+  .road-popup .road-edit-save-btn,
+  .road-popup .road-edit-save-btn.no-changes,
+  .road-popup .road-edit-save-btn.has-changes,
+  .road-popup .road-edit-save-btn.is-saving,
+  .road-popup .road-edit-save-btn.is-saved {
+    color: #34c759 !important;
+  }
+
 </style>
 
 </head>
@@ -14563,6 +14573,17 @@
 
             kakao.maps.event.preventMap();
             suppressBasePlaceClickUntil = Date.now() + 350;
+
+            if (roadEditSessionGroupKey) {
+              if (roadEditSessionGroupKey === groupKey) {
+                selectRoadSegmentDuringEdit(event.latLng, groupKey, road);
+              } else {
+                alert("현재 편집 중인 노선을 먼저 저장하거나 편집을 종료해 주세요.");
+                syncRoadPopupEditToggle(roadEditSessionGroupKey, true);
+              }
+              return;
+            }
+
             showInfo(event.latLng, groupKey, road);
           }
         );
@@ -15571,7 +15592,7 @@
                 road.hitLine.setMap(map);
               }
               setMapOptionsIfChanged(road.hitLine, {
-                zIndex: enabled ? 110 : 60
+                zIndex: enabled ? 130 : 60
               });
             }
           }
@@ -15869,14 +15890,10 @@
         const saveBtn = popup.querySelector(".road-edit-save-btn");
         if (!saveBtn) return;
 
-        const hasChanges = roadEditHasUnsavedChanges();
-        saveBtn.classList.toggle("has-changes", hasChanges);
-        saveBtn.classList.toggle("no-changes", !hasChanges);
-        saveBtn.setAttribute(
-          "aria-label",
-          hasChanges ? "변경사항 저장" : "저장할 변경사항 없음"
-        );
-        saveBtn.title = hasChanges ? "변경사항 저장" : "저장할 변경사항 없음";
+        saveBtn.classList.remove("no-changes");
+        saveBtn.classList.add("has-changes");
+        saveBtn.setAttribute("aria-label", "저장");
+        saveBtn.title = "저장";
       }
 
       function setRoadEditDirty(dirty) {
@@ -16013,11 +16030,19 @@
 
         if (shouldSave) {
           let saved = false;
+
           if (roadGeometryEditState && roadGeometryEditState.groupKey === groupKey) {
-            saved = await saveRoadGeometryEdit({ keepEditing: false });
-          } else {
-            saved = await saveRoadAttributes(groupKey, { keepEditing: false });
+            saved = await saveRoadGeometryEdit({ keepEditing: true });
+            if (!saved) {
+              syncRoadPopupEditToggle(groupKey, true);
+              return;
+            }
           }
+
+          saved = await saveAllRoadEditSessionChanges(
+            groupKey,
+            { keepEditing: false }
+          );
 
           if (!saved) {
             syncRoadPopupEditToggle(groupKey, true);
@@ -16083,6 +16108,78 @@
       function focusSelectedRoadForEditing(groupKey, road) {
         // 편집 시작 시 현재 지도 범위/중심/축척을 그대로 유지함.
         return;
+      }
+
+      function commitCurrentInlineRoadEditValues(groupKey) {
+        const group = groups.get(groupKey);
+        const form = document.getElementById("roadEditForm");
+        if (!group || !form) return false;
+
+        const road = getEditableRoad(groupKey);
+        if (!road) return false;
+
+        const data = new FormData(form);
+        const values = {};
+
+        if (group.layerId === "city") {
+          values.status = data.get("status") || statusValueFromKey(getRoadStatusKey(road.properties, group.layerId));
+          values.length = data.get("length") || safe(road.properties && road.properties["연장"]);
+          values.review = data.get("review") || "";
+          values.start = data.get("start") || "";
+          values.end = data.get("end") || "";
+        } else {
+          values.status = data.get("status") || statusValueFromKey(getRoadStatusKey(road.properties, group.layerId));
+          values.lane = data.get("laneSelected") || data.get("lane") || "";
+          values.width = data.get("widthSelected") || data.get("width") || "";
+          values.length = formatRoadLengthKm(roadGeometryLengthKm(road));
+          values.start = data.get("start") || "";
+          values.end = data.get("end") || "";
+
+          const gubun = data.get("gubun") || getRoadGroupTypeLabel(group);
+          if (gubun) {
+            // 구분은 동일 노선 전체에 적용.
+            group.propertiesList.forEach(function(p) {
+              setPropertyValue(p, ["GUBUN","구분"], "GUBUN", gubun);
+            });
+          }
+        }
+
+        applyRoadEditValuesToRoad(group, road, values);
+        road.statusKey = getRoadStatusKey(road.properties, group.layerId);
+        road.styleKey = getStyleKey(road.properties, group.layerId);
+        road._visualTier = null;
+
+        return true;
+      }
+
+      function selectRoadSegmentDuringEdit(position, groupKey, road) {
+        const group = groups.get(groupKey);
+        if (!group || roadEditSessionGroupKey !== groupKey) return false;
+        if (roadGeometryEditState) return false;
+
+        // 이전 선택 라인의 현재 입력값을 먼저 메모리에 반영.
+        commitCurrentInlineRoadEditValues(groupKey);
+
+        const targetRoad =
+          (road && group.roads.indexOf(road) !== -1)
+            ? road
+            : findClosestRoadInGroup(group, position);
+
+        if (!targetRoad) return false;
+
+        setSelectedRoadSegment(group, targetRoad, position);
+        selectedRoadGroupKey = groupKey;
+        setRoadGroupHighlight(groupKey, true);
+        updateSelectedRouteBalloon();
+
+        const existingPopup = document.querySelector("body > .road-popup");
+        if (existingPopup) existingPopup.remove();
+
+        createFixedRoadPopup(groupPopup(group, targetRoad));
+        syncRoadPopupEditToggle(groupKey, true);
+        bindInlineRoadEditForm(groupKey);
+
+        return true;
       }
 
       function restoreInlineRoadEditPopup(groupKey, preferredRoad) {
@@ -18278,7 +18375,14 @@
           await saveOnlineRoadEdits(group, payload);
 
           clearRoadGeometryEdit(true);
-          setRoadEditDirty(false);
+
+          // 라인편집 저장 후에도 편집 세션은 계속 활성 상태이며
+          // 다른 라인의 변경사항을 상단 저장으로 함께 반영할 수 있음.
+          if (keepEditing) {
+            setRoadEditDirty(true);
+          } else {
+            setRoadEditDirty(false);
+          }
 
           if (keepEditing) {
             roadEditSessionGroupKey = group.key;
@@ -18662,6 +18766,12 @@
         // 화면 우측 상단의 고정 HTML 패널로 생성.
         createFixedRoadPopup(html);
 
+        // 편집 세션 중에는 메모리의 수정값을 우선 유지하고 온라인 재동기화를 하지 않음.
+        if (roadEditSessionGroupKey === groupKey) {
+          bindInlineRoadEditForm(groupKey);
+          return;
+        }
+
         // 온라인에 저장된 편집정보가 있으면 즉시 불러와 현재 노선에 반영.
         syncOnlineRoadEdits(groupKey)
           .then(function(changed) {
@@ -18977,7 +19087,7 @@
 
         return '<span class="road-save-inline">' +
           '<span class="road-save-label">저장</span>' +
-          '<button type="button" class="road-edit-save-btn no-changes" data-group-key="' +
+          '<button type="button" class="road-edit-save-btn has-changes" data-group-key="' +
             encodedKey + '" aria-label="저장" title="저장">' +
             '<svg class="road-edit-save-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.5,20c-1.52,0-2.81-.53-3.89-1.58s-1.61-2.33-1.61-3.85c0-1.3.39-2.46,1.18-3.48.78-1.02,1.81-1.67,3.08-1.95.42-1.53,1.25-2.78,2.5-3.73s2.67-1.43,4.25-1.43c1.95,0,3.6.68,4.96,2.04s2.04,3.01,2.04,4.96c1.15.13,2.1.63,2.86,1.49s1.14,1.86,1.14,3.01c0,1.25-.44,2.31-1.31,3.19s-1.94,1.31-3.19,1.31h-5.5c-.55,0-1.02-.2-1.41-.59s-.59-.86-.59-1.41v-5.15l-1.6,1.55-1.4-1.4,4-4,4,4-1.4,1.4-1.6-1.55v5.15h5.5c.7,0,1.29-.24,1.78-.73.48-.48.73-1.08.73-1.78s-.24-1.29-.73-1.78-1.08-.73-1.78-.73h-1.5v-2c0-1.38-.49-2.56-1.46-3.54s-2.15-1.46-3.54-1.46-2.56.49-3.54,1.46-1.46,2.15-1.46,3.54h-.5c-.97,0-1.79.34-2.48,1.03s-1.03,1.51-1.03,2.48.34,1.79,1.03,2.48c.68.68,1.51,1.03,2.48,1.03h2.5v2h-2.5Z"/></svg>' +
           '</button>' +
@@ -18992,11 +19102,103 @@
         '</div>';
       }
 
-      async function saveCurrentRoadEditSession(groupKey) {
-        if (!groupKey || roadEditSaving) return false;
+      function cityRoadValuesFromProperties(group, road) {
+        const props = road && road.properties ? road.properties : {};
+        return {
+          status: statusValueFromKey(getRoadStatusKey(props, group.layerId)),
+          length: safe(props["연장"]) === "-" ? "" : props["연장"],
+          review: safe(props["검토"]) === "-" ? "" : props["검토"],
+          start: safe(props["시점"]) === "-" ? "" : props["시점"],
+          end: safe(props["종점"]) === "-" ? "" : props["종점"]
+        };
+      }
+
+      async function saveAllRoadEditSessionChanges(groupKey, options) {
+        options = options || {};
+        const keepEditing = options.keepEditing !== false;
 
         const group = groups.get(groupKey);
         if (!group) return false;
+
+        // 현재 화면에 입력 중인 마지막 라인도 저장 모델에 포함.
+        commitCurrentInlineRoadEditValues(groupKey);
+
+        try {
+          roadEditSaving = true;
+
+          let payload = null;
+          try {
+            payload = await fetchOnlineRoadEdits(group);
+          } catch (error) {
+            console.warn(error);
+          }
+
+          if (!payload || typeof payload !== "object") {
+            payload = {};
+          }
+
+          payload.layerId = group.layerId;
+          payload.number = String(group.number || "");
+
+          if (group.layerId === "rural") {
+            // 모든 라인의 속성 + geometry + 분할 구조를 한 번에 저장.
+            payload.version = 3;
+            payload.gubun = getRoadGroupTypeLabel(group);
+            payload.segmentModel = serializeRoadGroupSegments(group);
+            payload.roads = {};
+            payload.geometries = {};
+          } else {
+            payload.version = 2;
+            payload.roads = {};
+            payload.geometries = {};
+
+            group.roads.forEach(function(item, index) {
+              payload.roads[String(index)] = cityRoadValuesFromProperties(group, item);
+
+              const path =
+                (group.paths && group.paths[index]) ||
+                item.pathFine ||
+                [];
+
+              if (path.length >= 2) {
+                payload.geometries[String(index)] =
+                  serializeRoadGeometryPath(path);
+              }
+            });
+          }
+
+          await saveOnlineRoadEdits(group, payload);
+
+          setRoadEditDirty(false);
+          refreshEditedRoadGroup(groupKey);
+
+          if (keepEditing) {
+            roadEditSessionGroupKey = groupKey;
+            document.body.classList.add("road-edit-session-active");
+
+            const currentRoad = getEditableRoad(groupKey) || group.roads[0] || null;
+            if (currentRoad) {
+              restoreInlineRoadEditPopup(groupKey, currentRoad);
+            }
+          } else {
+            finishRoadEditSession(groupKey);
+          }
+
+          return true;
+        } catch (error) {
+          console.error(error);
+          alert("전체 라인 저장에 실패했습니다.\\n\\n" + error.message);
+          return false;
+        } finally {
+          roadEditSaving = false;
+          syncRoadEditSaveVisual();
+        }
+      }
+
+      window.saveAllRoadEditSessionChanges = saveAllRoadEditSessionChanges;
+
+      async function saveCurrentRoadEditSession(groupKey) {
+        if (!groupKey || roadEditSaving) return false;
 
         let saved = false;
 
@@ -19004,19 +19206,25 @@
           roadGeometryEditState &&
           roadGeometryEditState.groupKey === groupKey
         ) {
+          // 현재 선형편집 중인 라인은 먼저 메모리에 반영/저장한 뒤
+          // 전체 노선 세션 저장으로 이어감.
           saved = await saveRoadGeometryEdit({ keepEditing: true });
-        } else {
-          saved = await saveRoadAttributes(groupKey, { keepEditing: true });
+          if (!saved) return false;
         }
+
+        saved = await saveAllRoadEditSessionChanges(
+          groupKey,
+          { keepEditing: true }
+        );
 
         if (saved) {
           syncRoadPopupEditToggle(groupKey, true);
           const popup = document.querySelector("body > .road-popup");
           const saveBtn = popup && popup.querySelector(".road-edit-save-btn");
           if (saveBtn) {
-            saveBtn.classList.remove("has-changes");
-            saveBtn.classList.add("no-changes");
-            saveBtn.title = "저장할 변경사항 없음";
+            saveBtn.classList.remove("no-changes");
+            saveBtn.classList.add("has-changes");
+            saveBtn.title = "저장";
           }
         }
 
