@@ -11086,6 +11086,10 @@
       function syncRoadDerivedDisplayState(road) {
         if (!road) return false;
 
+        if (road.layerId === "rural") {
+          normalizeRuralRoadAutoStatus(road.properties || {});
+        }
+
         const nextStatusKey = getRoadStatusKey(road.properties || {}, road.layerId);
         const nextStyleKey = getStyleKey(road.properties || {}, road.layerId);
 
@@ -16829,6 +16833,16 @@
 
       roadsReadyPromise
       .then(function () {
+        // 첫 화면을 그리기 전에 모든 농어촌도로의 자동 개설여부를 확정.
+        allRoads.forEach(function(road) {
+          if (!road || road.layerId !== "rural") return;
+          normalizeRuralRoadAutoStatus(road.properties);
+          road.statusKey = getRoadStatusKey(road.properties, road.layerId);
+          road.styleKey = getStyleKey(road.properties, road.layerId);
+          road._visualTier = null;
+          syncRoadLayerStackForRoad(road);
+        });
+
         buildGroupLabels();
         makeLists();
         refreshAllRoadJoinLines();
@@ -16924,6 +16938,11 @@
 
       function addFeature(feature, layerId) {
         const properties = feature.properties || {};
+
+        if (layerId === "rural") {
+          normalizeRuralRoadAutoStatus(properties);
+        }
+
         const lines = getLines(feature.geometry);
         if (!lines.length) return;
 
@@ -20224,6 +20243,9 @@
           if (!segment || !Array.isArray(segment.geometry) || segment.geometry.length < 2) return;
 
           const properties = Object.assign({}, segment.properties || {});
+
+          normalizeRuralRoadAutoStatus(properties);
+
           // 분할된 구간은 반드시 기존 그룹과 같은 노선번호를 유지함.
           if ("number" in properties) properties.number = group.number;
           if ("NUMBER" in properties) properties.NUMBER = group.number;
@@ -20709,6 +20731,11 @@
           const index = Number(indexText);
           if (!Number.isInteger(index) || index < 0 || index >= group.roads.length) return;
           applyRoadEditValuesToRoad(group, group.roads[index], roadValues[indexText]);
+
+          if (group.layerId === "rural") {
+            normalizeRuralRoadAutoStatus(group.roads[index].properties);
+          }
+
           changed = true;
         });
 
@@ -25236,24 +25263,9 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return "NORMAL";
         }
 
-        // 원본/편집 데이터에 명시된 미개설·계획구간은 반드시 우선 적용.
-        // '개설' 표기가 있더라도 차선·도로폭이 기준에 미달하면 자동판정 결과를 따름.
-        const explicitStatus = String(
-          properties["기타"] ||
-          properties.Opened ||
-          properties.Opend ||
-          properties["개설여부"] ||
-          ""
-        ).trim();
-
-        if (explicitStatus.includes("계획")) return "PLAN";
-        if (
-          explicitStatus.includes("미개설") ||
-          explicitStatus.includes("미확장")
-        ) {
-          return "UNOPENED";
-        }
-
+        // 농어촌도로는 차선/도로폭 기준 자동판정을 항상 우선 적용.
+        // 초기 로딩 때도 편집/저장 후와 동일한 기준을 사용해야
+        // 새로고침 직후부터 선형이 정확히 표시됨.
         const gubun =
           properties["구분"] ||
           properties.GUBUN ||
@@ -25279,6 +25291,41 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
         if (autoStatus === "미개설") return "UNOPENED";
         if (autoStatus === "계획구간") return "PLAN";
         return "NORMAL";
+      }
+
+      function normalizeRuralRoadAutoStatus(properties) {
+        if (!properties) return "계획구간";
+
+        const gubun =
+          properties["구분"] ||
+          properties.GUBUN ||
+          properties.gubun ||
+          "";
+
+        const lane =
+          properties["차선"] ??
+          properties["차선현황"] ??
+          properties.lane ??
+          properties.LANE ??
+          "";
+
+        const width =
+          properties["도로폭"] ??
+          properties["폭원"] ??
+          properties.width ??
+          properties.WIDTH ??
+          "";
+
+        const status = classifyRuralRoadStatus(gubun, lane, width);
+
+        setPropertyValue(
+          properties,
+          ["기타","Opened","Opend","개설여부"],
+          "기타",
+          status
+        );
+
+        return status;
       }
 
       function roadStatusLabel(statusKey) {
