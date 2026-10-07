@@ -7690,7 +7690,7 @@
 
       const DEFAULT_STATUS_STYLES = {
         UNOPENED_SIZE: 4,
-        UNOPENED_GAP: "shortdot",
+        UNOPENED_GAP: "dash",
         UNEXPANDED: "shortdash"
       };
 
@@ -11202,6 +11202,11 @@
           ? getStatusStrokeStyle(road.statusKey)
           : layerConfig.lineStyle;
 
+        // 경주시 농어촌도로 미개설 구간은 항상 대시로 표시.
+        if (road.layerId === "rural" && road.statusKey === "UNOPENED") {
+          requestedStyle = "dash";
+        }
+
         if (requestedStyle === "none") {
           requestedStyle = "solid";
         }
@@ -13160,15 +13165,31 @@
       function addTownshipBoundaryLines(feature, target) {
         const geometry = feature && feature.geometry;
         if (!geometry) return;
-        const paths = geometry.type === "LineString" ? [geometry.coordinates] :
-          geometry.type === "MultiLineString" ? geometry.coordinates : [];
+
+        let paths = [];
+
+        if (geometry.type === "LineString") {
+          paths = [geometry.coordinates];
+        } else if (geometry.type === "MultiLineString") {
+          paths = geometry.coordinates;
+        } else if (geometry.type === "Polygon") {
+          paths = geometry.coordinates;
+        } else if (geometry.type === "MultiPolygon") {
+          paths = geometry.coordinates.flatMap(function(polygon) {
+            return polygon || [];
+          });
+        }
+
         paths.forEach(function(coordinates) {
           const path = boundaryRingToPath(coordinates);
           if (path.length < 2) return;
           target.push(new kakao.maps.Polyline({
-            path: path, strokeWeight: mapStrokePx(1.6, 1),
-            strokeColor: "#59636D", strokeOpacity: 0.92,
-            strokeStyle: "shortdash", zIndex: 30
+            path: path,
+            strokeWeight: mapStrokePx(1.6, 1),
+            strokeColor: "#59636D",
+            strokeOpacity: 0.92,
+            strokeStyle: "shortdash",
+            zIndex: 30
           }));
         });
       }
@@ -13196,14 +13217,18 @@
 
       function shouldShowTownshipLabel(name) {
         if (!name) return false;
-        if (shouldAutoShowTownshipBoundary()) return true;
 
         const isDong = /동$/.test(String(name).trim());
+
+        // 초기 읍면동 선택 화면에서는 동 명칭을 숨기고 읍·면 명칭만 표시.
+        if (townshipStartMode && isDong) return false;
+
+        if (shouldAutoShowTownshipBoundary()) return true;
 
         // 읍·면은 기존처럼 표시
         if (!isDong) return true;
 
-        // 동 명칭은 1:61,000 이하에서만 표시
+        // 초기화면 종료 후 동 명칭은 1:61,000 이하에서만 표시
         const scale = Number(currentScaleDenominator);
         return Number.isFinite(scale) && scale <= 61000;
       }
@@ -13724,7 +13749,10 @@
           ),
           strokeColor: style.color,
           strokeOpacity: style.topOpacity / 100,
-          strokeStyle: getStatusStrokeStyle(statusKey),
+          strokeStyle:
+            layerId === "rural" && statusKey === "UNOPENED"
+              ? "dash"
+              : getStatusStrokeStyle(statusKey),
           zIndex: 30
         });
 
@@ -17278,7 +17306,7 @@
         }
 
         const type = String(
-          properties.GUBUN || ""
+          properties["구분"] || properties.GUBUN || properties.gubun || ""
         ).trim();
 
         if (type === "면도") {
@@ -17299,10 +17327,13 @@
       function getStyleKey(properties, layerId) {
         if (layerId === "city") return "CITY";
 
-        const type = String(properties.GUBUN || "").trim();
+        const type = String(
+          properties["구분"] || properties.GUBUN || properties.gubun || ""
+        ).trim();
 
         if (type === "면도") return "MYEON";
         if (type === "리도") return "RI";
+        if (type === "농도") return "FARM";
         return "FARM";
       }
 
@@ -17314,7 +17345,14 @@
           return "NORMAL";
         }
 
-        const status = String(properties.Opened || "").trim();
+        // 경주시 농어촌도로는 '기타' 필드의 개설/미개설 값을 우선 사용.
+        // 기존 데이터 호환을 위해 기타 값이 없을 때만 Opened/개설여부를 보조로 사용.
+        const status = String(
+          properties["기타"] ||
+          properties.Opened ||
+          properties["개설여부"] ||
+          ""
+        ).trim();
         if (status.includes("미개설")) return "UNOPENED";
         if (status.includes("미확장")) return "UNEXPANDED";
         return "NORMAL";
