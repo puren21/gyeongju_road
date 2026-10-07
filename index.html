@@ -8459,6 +8459,57 @@
     opacity: .55;
   }
 
+
+  /* ===== 2026-10-07: 노선 속성창 크기조절 ===== */
+  .road-popup {
+    min-width: 245px;
+    min-height: 260px;
+    max-height: calc(100vh - 24px);
+  }
+
+  .road-popup.road-popup-resizable {
+    overflow: auto !important;
+  }
+
+  .road-popup .road-popup-resize-handle {
+    position: absolute;
+    left: -7px;
+    bottom: -7px;
+    width: 32px;
+    height: 32px;
+    z-index: 10005;
+    cursor: nesw-resize;
+    touch-action: none;
+    user-select: none;
+    pointer-events: auto;
+  }
+
+  .road-popup .road-popup-resize-handle::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    bottom: 7px;
+    width: 14px;
+    height: 14px;
+    border-left: 3px solid rgba(52,199,89,.92);
+    border-bottom: 3px solid rgba(52,199,89,.92);
+    border-radius: 0 0 0 2px;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+
+  body.road-popup-resizing {
+    cursor: nesw-resize !important;
+    user-select: none !important;
+  }
+
+  @media (max-width:700px) {
+    .road-popup .road-popup-resize-handle {
+      width: 38px;
+      height: 38px;
+    }
+  }
+
 </style>
 
 </head>
@@ -19696,6 +19747,61 @@
         refreshRoadGroupJoinLines(state.group);
       }
 
+      let roadGeometryPointerClientX = null;
+      let roadGeometryPointerClientY = null;
+
+      function rememberRoadGeometryPointer(event) {
+        if (!event) return;
+        if (Number.isFinite(event.clientX)) roadGeometryPointerClientX = event.clientX;
+        if (Number.isFinite(event.clientY)) roadGeometryPointerClientY = event.clientY;
+      }
+
+      window.addEventListener("pointermove", rememberRoadGeometryPointer, { passive: true });
+      window.addEventListener("mousemove", rememberRoadGeometryPointer, { passive: true });
+
+      function getRoadGeometryDragPosition(marker) {
+        if (!marker) return null;
+
+        // 일반 화면에서는 Kakao Marker가 계산한 좌표를 그대로 사용함.
+        if (!isSkyExtraZoomActive()) {
+          return marker.getPosition();
+        }
+
+        const mapElement = document.getElementById("map");
+        const projection = map && map.getProjection ? map.getProjection() : null;
+
+        if (
+          !mapElement ||
+          !projection ||
+          !Number.isFinite(roadGeometryPointerClientX) ||
+          !Number.isFinite(roadGeometryPointerClientY)
+        ) {
+          return marker.getPosition();
+        }
+
+        const rect = mapElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) return marker.getPosition();
+
+        // CSS scale(2)은 화면 중심을 기준으로 적용됨.
+        // 화면 좌표를 역으로 1/2 보정하여 Kakao의 원래 container 좌표로 환산함.
+        const visualX = roadGeometryPointerClientX - rect.left;
+        const visualY = roadGeometryPointerClientY - rect.top;
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+
+        const sourceX = centerX + (visualX - centerX) / 2;
+        const sourceY = centerY + (visualY - centerY) / 2;
+
+        try {
+          const corrected = projection.coordsFromContainerPoint(
+            new kakao.maps.Point(sourceX, sourceY)
+          );
+          return corrected || marker.getPosition();
+        } catch (e) {
+          return marker.getPosition();
+        }
+      }
+
       function rebuildRoadGeometryEditMarkers(state) {
         if (!state) return;
 
@@ -19770,7 +19876,13 @@
           });
 
           kakao.maps.event.addListener(marker, "drag", function() {
-            const position = marker.getPosition();
+            const position = getRoadGeometryDragPosition(marker);
+            if (!position) return;
+
+            if (isSkyExtraZoomActive()) {
+              marker.setPosition(position);
+            }
+
             state.workingPath[index] = position;
 
             state.previewLine.setPath(state.workingPath);
@@ -19784,7 +19896,13 @@
           });
 
           kakao.maps.event.addListener(marker, "dragend", function() {
-            const position = marker.getPosition();
+            const position = getRoadGeometryDragPosition(marker);
+            if (!position) return;
+
+            if (isSkyExtraZoomActive()) {
+              marker.setPosition(position);
+            }
+
             state.workingPath[index] = position;
 
             state.previewLine.setPath(state.workingPath);
@@ -20671,6 +20789,111 @@
       }
 
 
+      function enableRoadPopupResize(popup) {
+        if (!popup || popup.dataset.resizeBound === "1") return;
+        popup.dataset.resizeBound = "1";
+        popup.classList.add("road-popup-resizable");
+
+        const handle = document.createElement("div");
+        handle.className = "road-popup-resize-handle";
+        handle.setAttribute("title", "드래그하여 속성창 크기 조절");
+        handle.setAttribute("aria-label", "속성창 크기 조절");
+        popup.appendChild(handle);
+
+        let resizing = false;
+        let pointerId = null;
+        let startX = 0;
+        let startY = 0;
+        let startWidth = 0;
+        let startHeight = 0;
+        let fixedRight = 15;
+        let fixedTop = 72;
+
+        function clampPopupSize(width, height) {
+          const minWidth = Math.min(245, Math.max(220, window.innerWidth - 24));
+          const minHeight = Math.min(260, Math.max(180, window.innerHeight - 24));
+          const maxWidth = Math.max(minWidth, window.innerWidth - fixedRight - 8);
+          const maxHeight = Math.max(minHeight, window.innerHeight - fixedTop - 8);
+
+          return {
+            width: Math.max(minWidth, Math.min(maxWidth, width)),
+            height: Math.max(minHeight, Math.min(maxHeight, height))
+          };
+        }
+
+        function beginPopupResize(event) {
+          if (event.button !== undefined && event.button !== 0) return;
+
+          const rect = popup.getBoundingClientRect();
+          resizing = true;
+          pointerId = event.pointerId;
+          startX = event.clientX;
+          startY = event.clientY;
+          startWidth = rect.width;
+          startHeight = rect.height;
+          fixedRight = Math.max(0, window.innerWidth - rect.right);
+          fixedTop = rect.top;
+
+          // 우측/상단은 고정하고 좌측/하단을 움직여 크기를 변경함.
+          popup.style.left = "auto";
+          popup.style.right = fixedRight + "px";
+          popup.style.top = fixedTop + "px";
+          popup.style.bottom = "auto";
+          popup.style.width = startWidth + "px";
+          popup.style.height = startHeight + "px";
+          popup.style.maxHeight = "none";
+
+          document.body.classList.add("road-popup-resizing");
+
+          try { handle.setPointerCapture(pointerId); } catch (e) {}
+
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        function movePopupResize(event) {
+          if (!resizing) return;
+          if (
+            pointerId !== null &&
+            event.pointerId !== undefined &&
+            event.pointerId !== pointerId
+          ) return;
+
+          // 좌측으로 끌면 폭 증가, 아래쪽으로 끌면 높이 증가.
+          const next = clampPopupSize(
+            startWidth - (event.clientX - startX),
+            startHeight + (event.clientY - startY)
+          );
+
+          popup.style.width = Math.round(next.width) + "px";
+          popup.style.height = Math.round(next.height) + "px";
+
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        function finishPopupResize(event) {
+          if (!resizing) return;
+          if (
+            event &&
+            pointerId !== null &&
+            event.pointerId !== undefined &&
+            event.pointerId !== pointerId
+          ) return;
+
+          resizing = false;
+          document.body.classList.remove("road-popup-resizing");
+
+          try { handle.releasePointerCapture(pointerId); } catch (e) {}
+          pointerId = null;
+        }
+
+        handle.addEventListener("pointerdown", beginPopupResize);
+        window.addEventListener("pointermove", movePopupResize, { passive: false });
+        window.addEventListener("pointerup", finishPopupResize);
+        window.addEventListener("pointercancel", finishPopupResize);
+      }
+
       function createFixedRoadPopup(html) {
         const holder = document.createElement("div");
         holder.innerHTML = html.trim();
@@ -20686,6 +20909,7 @@
         roadPopupOverlay = popup;
         syncMobileRoadInfoState(true);
 
+        enableRoadPopupResize(popup);
         placeRoadPopupTopRight();
         keepRoadPopupInSafeViewport();
         enableRoadPopupDrag();
