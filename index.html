@@ -7651,6 +7651,30 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 편집창 입력/자동계산 구분 + 라인편집 단일 버튼 ===== */
+  .road-edit-field.is-readonly input,
+  .road-edit-field input[readonly] {
+    background: #f2f3f5 !important;
+    color: #7a8087 !important;
+    cursor: default !important;
+    user-select: text;
+  }
+
+  .road-edit-field.is-readonly label {
+    color: #7a8087 !important;
+  }
+
+  .road-edit-actions.road-edit-actions-line-only {
+    display: block !important;
+  }
+
+  .road-edit-actions.road-edit-actions-line-only #startGeometryEditBtn {
+    width: 100% !important;
+    min-height: 42px !important;
+    margin: 0 !important;
+  }
+
 </style>
 
 </head>
@@ -15549,7 +15573,7 @@
             roadEditorEscape(value) + '"' + (readOnly ? " readonly" : "") + '>';
         }
 
-        return '<div class="road-edit-field">' +
+        return '<div class="road-edit-field' + (readOnly ? ' is-readonly' : '') + '">' +
           '<label>' + roadEditorEscape(label) + '</label>' +
           control +
         '</div>';
@@ -15794,12 +15818,10 @@
             '<button type="button" class="road-edit-close" onclick="cancelRoadEditor()">×</button>' +
           '</div>' +
           '<div class="road-edit-body">' +
-            '<div class="road-edit-note">편집 모드는 상단 편집 스위치를 최종으로 끌 때까지 유지됨. 저장 후에도 편집 모드는 계속 켜져 있음. 선형 편집에서 꼭지점 이동·추가·삭제와 라인 나누기를 함께 사용할 수 있음. 라인을 나누더라도 두 구간은 같은 노선번호를 유지함.</div>' +
+            '<div class="road-edit-note">입력 가능한 항목은 직접 수정할 수 있으며, 노선번호·연장 등 자동계산 또는 고정 항목은 수정할 수 없음. 변경내용은 편집 스위치를 끌 때 저장 여부를 확인함.</div>' +
             '<form id="roadEditForm">' + fields + '</form>' +
-            '<div class="road-edit-actions">' +
-              '<button type="button" class="geometry" id="startGeometryEditBtn">선형 편집</button>' +
-              '<button type="button" onclick="cancelRoadEditor()">취소</button>' +
-              '<button type="button" class="primary" id="saveRoadAttributesBtn">저장</button>' +
+            '<div class="road-edit-actions road-edit-actions-line-only">' +
+              '<button type="button" class="geometry" id="startGeometryEditBtn">라인편집</button>' +
             '</div>' +
           '</div>';
 
@@ -15819,14 +15841,6 @@
             });
           });
         }
-
-        document.getElementById("saveRoadAttributesBtn").onclick = function() {
-          if (roadGeometryEditState && roadGeometryEditState.groupKey === groupKey) {
-            saveRoadGeometryEdit({ keepEditing: true });
-          } else {
-            saveRoadAttributes(groupKey, { keepEditing: true });
-          }
-        };
 
         document.getElementById("startGeometryEditBtn").onclick = function() {
           startRoadGeometryEdit(groupKey);
