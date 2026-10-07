@@ -19051,8 +19051,10 @@
 
         if (!isEndpoint) return connected;
 
-        // 같은 노선 안에서 약 2m 이내의 끝점은 같은 연결 노드로 판단함.
-        const toleranceMeters = 2.0;
+        // 분할 저장된 연결점처럼 사실상 동일한 좌표의 끝점만
+        // 하나의 연결 노드로 판단함. 가까이 지나가는 별도 도로가
+        // 같이 움직이지 않도록 허용오차를 매우 작게 둠.
+        const toleranceMeters = 0.15;
 
         state.group.roads.forEach(function(otherRoad, otherIndex) {
           if (!otherRoad || otherRoad === state.road) return;
@@ -19085,6 +19087,33 @@
         });
 
         return connected;
+      }
+
+      function ensureConnectedRoadSnapshots(state, connections) {
+        if (!state || !state.group || !Array.isArray(connections)) return;
+        if (!Array.isArray(state.groupRoadSnapshots)) {
+          state.groupRoadSnapshots = [];
+        }
+
+        connections.forEach(function(connection) {
+          if (!connection || !connection.road) return;
+
+          const exists = state.groupRoadSnapshots.some(function(snapshot) {
+            return snapshot.road === connection.road;
+          });
+          if (exists) return;
+
+          const path =
+            (state.group.paths && state.group.paths[connection.roadIndex]) ||
+            connection.road.pathFine ||
+            [];
+
+          state.groupRoadSnapshots.push({
+            road: connection.road,
+            roadIndex: connection.roadIndex,
+            path: cloneRoadEditPath(path)
+          });
+        });
       }
 
       function updateConnectedRoadEndpoint(state, connection, position) {
@@ -19160,13 +19189,14 @@
           getRoadVisualLines(road)
             .concat(road.hitLine ? [road.hitLine] : [])
             .forEach(function(line) {
-              if (line) setRoadLinePathIfChanged(line, savedPrimaryPath, true);
+              if (line) setRoadLinePathIfChanged(line, path, true);
             });
 
           applyRoadPathTier(road, getRoadPathTier());
         });
 
         recalcGroupBounds(state.group);
+        refreshRoadGroupJoinLines(state.group);
       }
 
       function rebuildRoadGeometryEditMarkers(state) {
@@ -19198,8 +19228,17 @@
 
           kakao.maps.event.addListener(marker, "dragstart", function() {
             map.setCursor("move");
-            // 현재 선택된 라인만 편집함.
-            state.activeConnectedEndpoints = [];
+
+            const originPosition = state.workingPath[index];
+
+            // 분할로 생성된 공통 끝점이면 인접 구간의 연결 끝점도 함께 이동.
+            state.activeConnectedEndpoints =
+              findConnectedRoadEndpoints(state, index, originPosition);
+
+            ensureConnectedRoadSnapshots(
+              state,
+              state.activeConnectedEndpoints
+            );
           });
 
           kakao.maps.event.addListener(marker, "rightclick", function(mouseEvent) {
@@ -19242,18 +19281,23 @@
               state.previewHitLine.setPath(state.workingPath);
             }
 
-            // 현재 선택된 라인만 변경함. 다른 라인은 건드리지 않음.
+            // 분할 연결점이면 반대편 구간 endpoint도 같은 좌표로 실시간 이동.
+            moveConnectedRoadEndpoints(state, position);
+            refreshRoadGroupJoinLines(state.group);
           });
 
           kakao.maps.event.addListener(marker, "dragend", function() {
             const position = marker.getPosition();
             state.workingPath[index] = position;
 
-            // 현재 선택된 라인만 편집하며 다른 라인으로 자동 스냅/이동하지 않음.
             state.previewLine.setPath(state.workingPath);
             if (state.previewHitLine) {
               state.previewHitLine.setPath(state.workingPath);
             }
+
+            // 마지막 좌표도 연결된 구간에 동일하게 적용한 뒤 종료.
+            moveConnectedRoadEndpoints(state, position);
+            refreshRoadGroupJoinLines(state.group);
 
             state.activeConnectedEndpoints = [];
             setRoadEditDirty(true);
@@ -19402,12 +19446,15 @@
         } else {
           hideGeometryHoverPlus(state, true);
 
-          // 라인 나누기 중에도 현재 라인의 모든 꼭지점을 화면에 표시함.
-          // 분할 모드의 꼭지점은 위치 확인용이며 이동/삭제는 되지 않음.
-          showRoadGeometrySplitVertices(state);
+          // 라인 나누기 모드에서는 꼭지점 마커를 숨기고
+          // 분할 위치 선택에만 집중하도록 함.
+          (state.markers || []).forEach(function(marker) {
+            try { marker.setMap(null); } catch (e) {}
+          });
+          state.markers = [];
 
           if (help) {
-            help.textContent = "꼭지점을 확인하면서 나눌 위치를 현재 라인 위에서 클릭";
+            help.textContent = "나눌 위치를 현재 라인 위에서 클릭";
           }
           map.setCursor("crosshair");
         }
@@ -19718,6 +19765,21 @@
             saveButton.disabled = true;
             saveButton.textContent = "저장 중";
           }
+
+          // 현재 선택 라인의 시작/끝점이 분할 연결점이면
+          // 저장 직전에도 인접 구간 끝점을 동일 좌표로 한 번 더 맞춤.
+          [0, state.workingPath.length - 1].forEach(function(vertexIndex) {
+            const endpoint = state.workingPath[vertexIndex];
+            const connections =
+              findConnectedRoadEndpoints(state, vertexIndex, endpoint);
+            if (connections.length) {
+              ensureConnectedRoadSnapshots(state, connections);
+              connections.forEach(function(connection) {
+                updateConnectedRoadEndpoint(state, connection, endpoint);
+              });
+            }
+          });
+          refreshRoadGroupJoinLines(group);
 
           // 현재 선택된 라인만 저장함.
           const path = state.workingPath.slice();
