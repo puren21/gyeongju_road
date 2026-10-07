@@ -12926,6 +12926,7 @@
       let roadviewDirectionOverlay = null;
       let roadviewDirectionCone = null;
       let roadviewPopupWindow = null;
+      let roadviewPopupWatchTimer = null;
       let roadviewMainOverlay = null;
       let roadviewMainCone = null;
       let roadviewMainIcon = null;
@@ -24268,8 +24269,52 @@
       }
 
 
+      function hideEmbeddedRoadviewForPopup() {
+        if (roadviewPanel) {
+          roadviewPanel.style.display = "none";
+        }
+      }
+
+      function restoreEmbeddedRoadviewAfterPopup() {
+        if (roadviewPopupWatchTimer) {
+          clearInterval(roadviewPopupWatchTimer);
+          roadviewPopupWatchTimer = null;
+        }
+
+        roadviewPopupWindow = null;
+
+        if (!roadviewMode) return;
+
+        showEmbeddedRoadview();
+
+        // 팝업에서 마지막으로 보고 있던 위치는 메인 지도 아이콘/레이더에 이미 동기화됨.
+        // 좌하단 로드뷰는 기존 인스턴스 상태를 그대로 다시 표시함.
+        setTimeout(function() {
+          if (roadview) roadview.relayout();
+        }, 0);
+      }
+
+      window.restoreEmbeddedRoadviewAfterPopup = restoreEmbeddedRoadviewAfterPopup;
+
+      function watchRoadviewPopupClose() {
+        if (roadviewPopupWatchTimer) {
+          clearInterval(roadviewPopupWatchTimer);
+        }
+
+        roadviewPopupWatchTimer = setInterval(function() {
+          if (!roadviewPopupWindow || roadviewPopupWindow.closed) {
+            clearInterval(roadviewPopupWatchTimer);
+            roadviewPopupWatchTimer = null;
+            restoreEmbeddedRoadviewAfterPopup();
+          }
+        }, 300);
+      }
+
+
       function ensureRoadviewPopup() {
         if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
+          hideEmbeddedRoadviewForPopup();
+          watchRoadviewPopupClose();
           try {
             roadviewPopupWindow.focus();
           } catch (e) {}
@@ -24487,7 +24532,21 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
     document.getElementById("loading").style.display = "none";
   };
 
-  document.getElementById("closeBtn").onclick = function(){ window.close(); };
+  function notifyOpenerClosed() {
+    if (!window.opener || window.opener.closed) return;
+    try {
+      if (typeof window.opener.restoreEmbeddedRoadviewAfterPopup === "function") {
+        window.opener.restoreEmbeddedRoadviewAfterPopup();
+      }
+    } catch (e) {}
+  }
+
+  document.getElementById("closeBtn").onclick = function(){
+    notifyOpenerClosed();
+    window.close();
+  };
+
+  window.addEventListener("beforeunload", notifyOpenerClosed);
 
   var script = document.createElement("script");
   script.src = "https://dapi.kakao.com/v2/maps/sdk.js?appkey=7ee4bab8cd4d6be6d0d68a49e9b4502b&autoload=false";
@@ -24516,6 +24575,9 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
         roadviewPopupWindow.document.open();
         roadviewPopupWindow.document.write(popupHtml);
         roadviewPopupWindow.document.close();
+
+        hideEmbeddedRoadviewForPopup();
+        watchRoadviewPopupClose();
 
         try {
           roadviewPopupWindow.focus();
@@ -24617,6 +24679,11 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
 
         hideMainRoadviewRadar();
 
+        if (roadviewPopupWatchTimer) {
+          clearInterval(roadviewPopupWatchTimer);
+          roadviewPopupWatchTimer = null;
+        }
+
         if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
           try { roadviewPopupWindow.close(); } catch (e) {}
         }
@@ -24645,8 +24712,18 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
             const lat = position.getLat();
             const lng = position.getLng();
 
-            // 기본 좌하단 로드뷰 갱신.
-            showEmbeddedRoadview();
+            // 팝업이 열려 있으면 좌하단 로드뷰는 숨긴 상태를 유지함.
+            const popupOpen =
+              roadviewPopupWindow &&
+              !roadviewPopupWindow.closed;
+
+            if (!popupOpen) {
+              showEmbeddedRoadview();
+            } else {
+              hideEmbeddedRoadviewForPopup();
+            }
+
+            // 좌하단 인스턴스도 같은 위치로 갱신해 두었다가 팝업을 닫으면 즉시 이어서 표시.
             if (roadview) {
               roadview.setPanoId(panoId, position);
             }
