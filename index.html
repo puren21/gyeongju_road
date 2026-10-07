@@ -8304,6 +8304,8 @@
       let selectedRoadGroupKey = null;
       let selectedRoadPopupState = null;
       let selectedRoadObject = null;
+      // 분할/온라인 복원으로 road 객체가 재생성되어도 선택 구간을 유지하기 위한 인덱스.
+      let selectedRoadSegmentIndex = -1;
       let selectedTownshipName = null;
       let townshipStartMode = true;
       let townshipStartCompleted = false;
@@ -15130,23 +15132,36 @@
         const group = groups.get(groupKey);
         if (!group || !group.roads) return;
 
-        // 분할 저장/온라인 복원으로 road 객체가 새로 생성돼도,
-        // 마지막 클릭 위치를 기준으로 현재 실제 분할 구간을 다시 찾아 선택한다.
-        // 따라서 같은 노선의 선택 구간은 항상 빨강, 나머지는 파랑으로 유지됨.
-        if (
-          enabled &&
-          selectedRoadPopupState &&
-          selectedRoadPopupState.groupKey === groupKey &&
-          selectedRoadPopupState.anchorPosition &&
-          geometryEditingGroupKey !== groupKey
-        ) {
-          const resolvedSelectedRoad = findClosestRoadInGroup(
-            group,
+        // 분할 저장/온라인 복원으로 road 객체가 재생성돼도 선택 구간을 유지한다.
+        if (enabled && geometryEditingGroupKey !== groupKey) {
+          let resolvedSelectedRoad = null;
+
+          if (
+            Number.isInteger(selectedRoadSegmentIndex) &&
+            selectedRoadSegmentIndex >= 0 &&
+            selectedRoadSegmentIndex < group.roads.length
+          ) {
+            resolvedSelectedRoad = group.roads[selectedRoadSegmentIndex];
+          }
+
+          if (
+            !resolvedSelectedRoad &&
+            selectedRoadPopupState &&
+            selectedRoadPopupState.groupKey === groupKey &&
             selectedRoadPopupState.anchorPosition
-          );
+          ) {
+            resolvedSelectedRoad = findClosestRoadInGroup(
+              group,
+              selectedRoadPopupState.anchorPosition
+            );
+          }
+
           if (resolvedSelectedRoad) {
-            selectedRoadObject = resolvedSelectedRoad;
-            selectedRoadPopupState.road = resolvedSelectedRoad;
+            setSelectedRoadSegment(
+              group,
+              resolvedSelectedRoad,
+              selectedRoadPopupState && selectedRoadPopupState.anchorPosition
+            );
           }
         }
 
@@ -15185,8 +15200,11 @@
 
           const stack = getRoadLayerStack(road.styleKey);
           const lines = getRoadVisualLines(road);
+          const roadIndex = group.roads.indexOf(road);
           const isSelectedSegment =
-            enabled && selectedRoadObject === road;
+            enabled &&
+            roadIndex >= 0 &&
+            roadIndex === selectedRoadSegmentIndex;
           const highlightColor =
             isSelectedSegment ? "#E60012" : "#0057FF";
 
@@ -15289,6 +15307,7 @@
 
           // 선택 해제 전에 선택 객체를 비워야 전체 노선이 원래 스타일로 복원됨.
           selectedRoadObject = null;
+          selectedRoadSegmentIndex = -1;
           setRoadGroupHighlight(previousGroupKey, false);
           selectedRoadGroupKey = null;
 
@@ -15300,6 +15319,7 @@
           }
         } else {
           selectedRoadObject = null;
+          selectedRoadSegmentIndex = -1;
         }
 
         selectedRoadPopupState = null;
@@ -15451,12 +15471,25 @@
         const group = groups.get(groupKey);
         if (!group || !group.roads.length) return null;
 
+        // 분할/온라인 복원 뒤에는 객체 참조가 바뀌므로 안정적인 구간 인덱스를 우선 사용.
+        if (
+          selectedRoadGroupKey === groupKey &&
+          Number.isInteger(selectedRoadSegmentIndex) &&
+          selectedRoadSegmentIndex >= 0 &&
+          selectedRoadSegmentIndex < group.roads.length
+        ) {
+          const indexedRoad = group.roads[selectedRoadSegmentIndex];
+          setSelectedRoadSegment(group, indexedRoad);
+          return indexedRoad;
+        }
+
         // 지도에서 클릭한 실제 선분을 최우선 편집 대상으로 사용함.
         if (
           selectedRoadObject &&
           selectedRoadObject.groupKey === groupKey &&
           group.roads.indexOf(selectedRoadObject) !== -1
         ) {
+          selectedRoadSegmentIndex = group.roads.indexOf(selectedRoadObject);
           return selectedRoadObject;
         }
 
@@ -15466,6 +15499,8 @@
           selectedRoadPopupState.road &&
           group.roads.indexOf(selectedRoadPopupState.road) !== -1
         ) {
+          selectedRoadSegmentIndex = group.roads.indexOf(selectedRoadPopupState.road);
+          selectedRoadObject = selectedRoadPopupState.road;
           return selectedRoadPopupState.road;
         }
 
@@ -15918,6 +15953,19 @@
         });
 
         syncRuralGeometryTotal(group);
+
+        if (
+          selectedRoadGroupKey === group.key &&
+          selectedRoadSegmentIndex >= 0 &&
+          selectedRoadSegmentIndex < group.roads.length
+        ) {
+          const restoredRoad = group.roads[selectedRoadSegmentIndex];
+          selectedRoadObject = restoredRoad;
+          if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
+            selectedRoadPopupState.road = restoredRoad;
+          }
+        }
+
         return group.roads.length > 0;
       }
 
@@ -16535,6 +16583,9 @@
           restoreRoadEditGroupSnapshot(state);
         }
 
+        map.setCursor("");
+        roadGeometryEditState = null;
+
         if (state.road) {
           state.road._visualTier = null;
           applyRoadNormalVisualStyle(state.road);
@@ -16542,9 +16593,6 @@
             setRoadGroupHighlight(state.groupKey, true);
           }
         }
-
-        map.setCursor("");
-        roadGeometryEditState = null;
       }
 
 
@@ -17437,10 +17485,7 @@
 
       function startRoadGeometryEdit(groupKey) {
         const group = groups.get(groupKey);
-        const road =
-          (selectedRoadObject && selectedRoadObject.groupKey === groupKey)
-            ? selectedRoadObject
-            : getEditableRoad(groupKey);
+        const road = getEditableRoad(groupKey);
         if (!group || !road) return;
 
         if (roadGeometryEditState) {
@@ -17711,13 +17756,13 @@
             group.roads.splice(state.roadIndex + 1, 0, secondRoad);
             group.propertiesList.splice(state.roadIndex + 1, 0, secondProperties);
 
-            selectedRoadObject = road;
-            if (selectedRoadPopupState) {
-              selectedRoadPopupState.road = road;
-              selectedRoadPopupState.anchorPosition =
-                getRoadMidpointPosition(road) ||
-                selectedRoadPopupState.anchorPosition;
-            }
+            selectedRoadSegmentIndex = state.roadIndex;
+            setSelectedRoadSegment(
+              group,
+              road,
+              getRoadMidpointPosition(road) ||
+                (selectedRoadPopupState && selectedRoadPopupState.anchorPosition)
+            );
           }
 
           syncRuralGeometryTotal(group);
@@ -17778,18 +17823,26 @@
           clearRoadGeometryEdit(true);
           roadEditSessionGroupKey = null;
           closeRoadEditPanel(true);
+
+          // 새로 분할된 라인까지 정상 표시한 다음 선택 강조를 마지막에 다시 적용함.
+          group.roads.forEach(function(item) {
+            item._visualTier = null;
+          });
           applyRoadVisibility();
+          refreshEditedRoadGroup(group.key);
           updateLabels();
           setRoadGroupHighlight(group.key, true);
           updateSelectedRouteBalloon();
 
           // 현재 열린 노선정보도 저장된 선형 기준으로 즉시 다시 표시한다.
           if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
-            selectedRoadObject = road;
-            selectedRoadPopupState.road = road;
-            selectedRoadPopupState.anchorPosition =
+            selectedRoadSegmentIndex = state.roadIndex;
+            setSelectedRoadSegment(
+              group,
+              road,
               getRoadMidpointPosition(road) ||
-              selectedRoadPopupState.anchorPosition;
+                selectedRoadPopupState.anchorPosition
+            );
             setRoadGroupHighlight(group.key, true);
 
             const existingPopup = document.querySelector("body > .road-popup");
@@ -18008,6 +18061,27 @@
       }
 
 
+      function setSelectedRoadSegment(group, road, position) {
+        if (!group || !road) {
+          selectedRoadObject = null;
+          selectedRoadSegmentIndex = -1;
+          return null;
+        }
+
+        const index = group.roads.indexOf(road);
+        selectedRoadObject = road;
+        selectedRoadSegmentIndex = index >= 0 ? index : -1;
+
+        if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
+          selectedRoadPopupState.road = road;
+          if (position) {
+            selectedRoadPopupState.anchorPosition = position;
+          }
+        }
+
+        return road;
+      }
+
       function getRoadMidpointPosition(road) {
         if (!road) return null;
         const path = road.pathFine || road.pathMedium || road.pathCoarse || [];
@@ -18047,18 +18121,21 @@
         const group = groups.get(groupKey);
         if (!group) return;
 
-        selectedRoadObject =
+        const clickedRoad =
           findClosestRoadInGroup(group, position) ||
           road ||
           null;
+
+        selectedRoadPopupState = {
+          groupKey: groupKey,
+          road: clickedRoad,
+          anchorPosition: position
+        };
+        setSelectedRoadSegment(group, clickedRoad, position);
+
         selectRoadGroupHighlight(groupKey);
         updateSelectedRouteBalloon();
         collapseRoadListForMobileSelection();
-        selectedRoadPopupState = {
-          groupKey: groupKey,
-          road: selectedRoadObject,
-          anchorPosition: position
-        };
 
         addressInfo.close();
         addressMarker.setMap(null);
@@ -18089,8 +18166,11 @@
               currentGroup.roads[0] ||
               null;
 
-            selectedRoadObject = currentRoad;
-            selectedRoadPopupState.road = currentRoad;
+            setSelectedRoadSegment(
+              currentGroup,
+              currentRoad,
+              selectedRoadPopupState.anchorPosition || position
+            );
 
             // 선택한 분할 구간만 빨간색, 같은 노선의 다른 구간은 파란색으로 재강조.
             setRoadGroupHighlight(groupKey, true);
