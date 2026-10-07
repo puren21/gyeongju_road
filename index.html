@@ -9440,6 +9440,26 @@
     transition: none !important;
   }
 
+
+  /* ===== 라인편집 상단 메뉴 닫기 버튼 ===== */
+  .geometry-edit-toolbar .geometry-toolbar-close {
+    min-width: 30px;
+    width: 30px;
+    padding: 0 !important;
+    border-color: #cfd3d8 !important;
+    background: #f3f4f5 !important;
+    color: #555 !important;
+    font-size: 20px !important;
+    font-weight: 500 !important;
+    line-height: 28px !important;
+  }
+
+  .geometry-edit-toolbar .geometry-toolbar-close:hover {
+    border-color: #aeb4bb !important;
+    background: #e7e9ec !important;
+    color: #222 !important;
+  }
+
 </style>
 
 </head>
@@ -23151,7 +23171,8 @@
               '<button type="button" id="geometryDeleteBtn" onclick="deleteCurrentRoadGeometry()">라인 삭제</button>'
             : '') +
           '<button type="button" onclick="cancelRoadGeometryEdit()">취소</button>' +
-          '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>';
+          '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>' +
+          '<button type="button" class="geometry-toolbar-close" title="라인편집 닫기" aria-label="라인편집 닫기" onclick="closeRoadGeometryEditToolbar()">×</button>';
         document.body.appendChild(toolbar);
         enableGeometryEditToolbarDrag(toolbar);
         setRoadGeometryEditMode("vertex");
@@ -23540,6 +23561,21 @@
             }
           }
 
+          // 저장 후에도 라인편집 상단 메뉴는 자동으로 닫히지 않음.
+          // 현재 저장된 선택구간을 기준으로 편집상태를 즉시 다시 시작하여
+          // 사용자가 우측 × 닫기 버튼을 누를 때까지 툴바를 계속 유지함.
+          if (keepEditing) {
+            const reopenGroupKey = group.key;
+            setTimeout(function() {
+              if (
+                roadEditSessionGroupKey === reopenGroupKey &&
+                !roadGeometryEditState
+              ) {
+                startRoadGeometryEdit(reopenGroupKey);
+              }
+            }, 0);
+          }
+
           return true;
         } catch (error) {
           console.error(error);
@@ -23578,6 +23614,44 @@
       }
 
       window.cancelRoadGeometryEdit = cancelRoadGeometryEdit;
+
+      function closeRoadGeometryEditToolbar() {
+        const state = roadGeometryEditState;
+        if (!state) {
+          const toolbar = document.getElementById("geometryEditToolbar");
+          if (toolbar) toolbar.remove();
+          return;
+        }
+
+        if (hasRoadGeometryPendingChanges()) {
+          const discard = window.confirm(
+            "저장하지 않은 라인편집 내용이 있습니다.\n\n닫으면 현재 라인편집 내용은 취소됩니다."
+          );
+          if (!discard) return;
+        }
+
+        const groupKey = roadEditSessionGroupKey || state.groupKey;
+        const road = state.road;
+
+        clearRoadGeometryEdit(false);
+
+        if (groupKey) {
+          roadEditSessionGroupKey = groupKey;
+          document.body.classList.add("road-edit-session-active");
+          syncRoadPopupEditToggle(groupKey, true);
+          restoreInlineRoadEditPopup(
+            groupKey,
+            road || getEditableRoad(groupKey)
+          );
+        }
+
+        if (selectedRoadGroupKey) {
+          setRoadGroupHighlight(selectedRoadGroupKey, true);
+          updateSelectedRouteBalloon();
+        }
+      }
+
+      window.closeRoadGeometryEditToolbar = closeRoadGeometryEditToolbar;
 
       function exportEditedRoadsGeoJSON() {
         const features = [];
