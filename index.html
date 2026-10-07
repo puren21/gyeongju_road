@@ -8469,19 +8469,21 @@
 
   .road-popup.road-popup-resizable {
     overflow: auto !important;
+    padding-bottom: 34px !important;
   }
 
   .road-popup .road-popup-resize-handle {
     position: absolute;
-    left: -7px;
-    bottom: -7px;
-    width: 32px;
-    height: 32px;
+    left: 0;
+    bottom: 0;
+    width: 38px;
+    height: 38px;
     z-index: 10005;
     cursor: nesw-resize;
     touch-action: none;
     user-select: none;
     pointer-events: auto;
+    background: transparent;
   }
 
   .road-popup .road-popup-resize-handle::before {
@@ -8489,10 +8491,10 @@
     position: absolute;
     left: 7px;
     bottom: 7px;
-    width: 14px;
-    height: 14px;
-    border-left: 3px solid rgba(52,199,89,.92);
-    border-bottom: 3px solid rgba(52,199,89,.92);
+    width: 16px;
+    height: 16px;
+    border-left: 3px solid rgba(37,136,246,.96);
+    border-bottom: 3px solid rgba(37,136,246,.96);
     border-radius: 0 0 0 2px;
     box-sizing: border-box;
     pointer-events: none;
@@ -8508,6 +8510,12 @@
       width: 38px;
       height: 38px;
     }
+  }
+
+
+  /* ===== 2026-10-07: 노선 선택 말풍선 제거 ===== */
+  .selected-route-balloon {
+    display: none !important;
   }
 
 </style>
@@ -17261,59 +17269,8 @@
       }
 
       function updateSelectedRouteBalloon() {
-        if (mapInteracting || map.getLevel() >= overviewMapLevel) {
-          removeSelectedRouteBalloon();
-          return;
-        }
-        if (roadGeometryEditState) {
-          removeSelectedRouteBalloon();
-          return;
-        }
-        if (!selectedRoadGroupKey) {
-          removeSelectedRouteBalloon();
-          return;
-        }
-
-        const group = groups.get(selectedRoadGroupKey);
-        if (!group) {
-          removeSelectedRouteBalloon();
-          return;
-        }
-
-        const position = getSelectedRouteBalloonPosition(group);
-        if (!position) return;
-
-        const numberText = escapeHTML(String(group.number || "-"));
-        const typeText = escapeHTML(getRoadGroupTypeLabel(group));
-
-        if (!selectedRouteBalloonOverlay) {
-          const content = document.createElement("div");
-          content.className = "selected-route-balloon";
-          content.innerHTML =
-            '<div class="selected-route-balloon-number">' + numberText + '</div>' +
-            '<div class="selected-route-balloon-type">' + typeText + '</div>';
-
-          selectedRouteBalloonOverlay = new kakao.maps.CustomOverlay({
-            position: position,
-            content: content,
-            xAnchor: 0.24,
-            // 말풍선 꼬리 아래에 여유 공간을 확보해 도로선과 겹치지 않도록 함.
-            // yAnchor가 1보다 클수록 말풍선 전체가 노선 기준점 위쪽으로 이동함.
-            yAnchor: 1.52,
-            zIndex: 125
-          });
-          selectedRouteBalloonOverlay.setMap(map);
-        } else {
-          const node = selectedRouteBalloonOverlay.getContent && selectedRouteBalloonOverlay.getContent();
-          if (node) {
-            const numberEl = node.querySelector(".selected-route-balloon-number");
-            const typeEl = node.querySelector(".selected-route-balloon-type");
-            if (numberEl) numberEl.textContent = String(group.number || "-");
-            if (typeEl) typeEl.textContent = getRoadGroupTypeLabel(group);
-          }
-          selectedRouteBalloonOverlay.setPosition(position);
-          if (!selectedRouteBalloonOverlay.getMap()) selectedRouteBalloonOverlay.setMap(map);
-        }
+        // 노선 선택 시 지도 위에 표시되던 파란 말풍선(노선번호/도로구분)은 사용하지 않음.
+        removeSelectedRouteBalloon();
       }
 
       function setRoadGroupHighlight(groupKey, enabled) {
@@ -19747,58 +19704,41 @@
         refreshRoadGroupJoinLines(state.group);
       }
 
-      let roadGeometryPointerClientX = null;
-      let roadGeometryPointerClientY = null;
-
-      function rememberRoadGeometryPointer(event) {
-        if (!event) return;
-        if (Number.isFinite(event.clientX)) roadGeometryPointerClientX = event.clientX;
-        if (Number.isFinite(event.clientY)) roadGeometryPointerClientY = event.clientY;
-      }
-
-      window.addEventListener("pointermove", rememberRoadGeometryPointer, { passive: true });
-      window.addEventListener("mousemove", rememberRoadGeometryPointer, { passive: true });
-
       function getRoadGeometryDragPosition(marker) {
         if (!marker) return null;
 
-        // 일반 화면에서는 Kakao Marker가 계산한 좌표를 그대로 사용함.
-        if (!isSkyExtraZoomActive()) {
-          return marker.getPosition();
+        const nativePosition = marker.getPosition();
+
+        // 일반 지도/일반 확대에서는 Kakao Marker 좌표를 그대로 사용함.
+        if (!isSkyExtraZoomActive() || !nativePosition) {
+          return nativePosition;
         }
 
-        const mapElement = document.getElementById("map");
         const projection = map && map.getProjection ? map.getProjection() : null;
-
-        if (
-          !mapElement ||
-          !projection ||
-          !Number.isFinite(roadGeometryPointerClientX) ||
-          !Number.isFinite(roadGeometryPointerClientY)
-        ) {
-          return marker.getPosition();
-        }
-
-        const rect = mapElement.getBoundingClientRect();
-        if (!rect.width || !rect.height) return marker.getPosition();
-
-        // CSS scale(2)은 화면 중심을 기준으로 적용됨.
-        // 화면 좌표를 역으로 1/2 보정하여 Kakao의 원래 container 좌표로 환산함.
-        const visualX = roadGeometryPointerClientX - rect.left;
-        const visualY = roadGeometryPointerClientY - rect.top;
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-
-        const sourceX = centerX + (visualX - centerX) / 2;
-        const sourceY = centerY + (visualY - centerY) / 2;
+        if (!projection) return nativePosition;
 
         try {
-          const corrected = projection.coordsFromContainerPoint(
-            new kakao.maps.Point(sourceX, sourceY)
+          // CSS scale(2) 상태에서는 Kakao의 기본 marker drag가
+          // 화면 이동량을 약 2배의 지도 좌표 이동으로 해석함.
+          // Kakao가 계산한 현재 marker 좌표를 container point로 바꾼 뒤,
+          // 지도 중심으로부터의 이동량을 1/2로 역보정한다.
+          const nativePoint = projection.containerPointFromCoords(nativePosition);
+          const centerPosition = map.getCenter();
+          const centerPoint = projection.containerPointFromCoords(centerPosition);
+
+          if (!nativePoint || !centerPoint) return nativePosition;
+
+          const correctedPoint = new kakao.maps.Point(
+            centerPoint.x + (nativePoint.x - centerPoint.x) / 2,
+            centerPoint.y + (nativePoint.y - centerPoint.y) / 2
           );
-          return corrected || marker.getPosition();
+
+          const correctedPosition =
+            projection.coordsFromContainerPoint(correctedPoint);
+
+          return correctedPosition || nativePosition;
         } catch (e) {
-          return marker.getPosition();
+          return nativePosition;
         }
       }
 
