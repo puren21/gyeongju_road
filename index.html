@@ -1234,24 +1234,67 @@
     }
 
     /* 로드뷰 현재 위치 미니지도 */
-    #roadviewMiniMap {
+    #roadviewMiniMapWrap {
       position: absolute;
       left: 10px;
       bottom: 10px;
       z-index: 42;
       width: 260px;
       height: 180px;
+      min-width: 130px;
+      min-height: 95px;
+      box-sizing: border-box;
+    }
+
+    #roadviewMiniMap {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
       border: 3px solid #fff;
       box-sizing: border-box;
       background: #f4f5f7;
       box-shadow: 0 2px 8px #0006;
     }
 
-    #roadviewPanel.fullscreen #roadviewMiniMap {
+    #roadviewPanel.fullscreen #roadviewMiniMapWrap {
       width: 360px;
       height: 230px;
       left: 12px;
       bottom: 12px;
+    }
+
+    #roadviewMiniResizeHandle {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 34px;
+      height: 34px;
+      z-index: 46;
+      cursor: nesw-resize;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+      background: transparent;
+    }
+
+    #roadviewMiniResizeHandle::before {
+      content: "";
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      width: 15px;
+      height: 15px;
+      border-top: 3px solid rgba(37,136,246,.96);
+      border-right: 3px solid rgba(37,136,246,.96);
+      border-radius: 0 2px 0 0;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    body.roadview-mini-resizing {
+      cursor: nesw-resize !important;
+      user-select: none !important;
     }
 
     /* 로드뷰 미니지도 현재 위치 + 바라보는 방향 */
@@ -1353,14 +1396,14 @@
         height: 100%;
       }
 
-      #roadviewMiniMap {
+      #roadviewMiniMapWrap {
         width: 190px;
         height: 130px;
         left: 7px;
         bottom: 7px;
       }
 
-      #roadviewPanel.fullscreen #roadviewMiniMap {
+      #roadviewPanel.fullscreen #roadviewMiniMapWrap {
         width: 230px;
         height: 150px;
         left: 8px;
@@ -8745,7 +8788,11 @@
     </div>
 
     <div id="roadview"></div>
-    <div id="roadviewMiniMap" aria-label="로드뷰 현재 위치 지도"></div>
+    <div id="roadviewMiniMapWrap">
+      <div id="roadviewMiniMap" aria-label="로드뷰 현재 위치 지도"></div>
+      <div id="roadviewMiniResizeHandle" class="roadview-mini-resize-handle"
+           title="드래그하여 미니맵 크기 조절" aria-label="미니맵 크기 조절"></div>
+    </div>
   </div>
 
   <script>
@@ -11411,6 +11458,138 @@
 
       const roadviewResizeHandle =
         document.getElementById("roadviewResizeHandle");
+
+      const roadviewMiniMapWrap =
+        document.getElementById("roadviewMiniMapWrap");
+      const roadviewMiniResizeHandle =
+        document.getElementById("roadviewMiniResizeHandle");
+
+      function installRoadviewMiniResize() {
+        if (!roadviewMiniMapWrap || !roadviewMiniResizeHandle) return;
+        if (roadviewMiniResizeHandle.dataset.bound === "1") return;
+        roadviewMiniResizeHandle.dataset.bound = "1";
+
+        let resizing = false;
+        let pointerId = null;
+        let startX = 0;
+        let startY = 0;
+        let startWidth = 0;
+        let startHeight = 0;
+        let relayoutFrame = null;
+
+        function miniBounds(width, height) {
+          const panelRect = roadviewPanel
+            ? roadviewPanel.getBoundingClientRect()
+            : { width: window.innerWidth, height: window.innerHeight };
+
+          const minWidth = 130;
+          const minHeight = 95;
+          const maxWidth = Math.max(minWidth, panelRect.width - 28);
+          const maxHeight = Math.max(minHeight, panelRect.height - 28);
+
+          return {
+            width: Math.max(minWidth, Math.min(maxWidth, width)),
+            height: Math.max(minHeight, Math.min(maxHeight, height))
+          };
+        }
+
+        function relayoutMiniMap() {
+          if (relayoutFrame) cancelAnimationFrame(relayoutFrame);
+          relayoutFrame = requestAnimationFrame(function() {
+            relayoutFrame = null;
+            if (!roadviewMiniMap) return;
+
+            roadviewMiniMap.relayout();
+
+            const currentPosition =
+              roadview && roadview.getPosition
+                ? roadview.getPosition()
+                : null;
+
+            if (currentPosition) {
+              roadviewMiniMap.setCenter(currentPosition);
+            }
+
+            roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
+            roadviewMiniMap.setLevel(1, { animate: false });
+          });
+        }
+
+        function beginMiniResize(event) {
+          if (event.button !== undefined && event.button !== 0) return;
+
+          const rect = roadviewMiniMapWrap.getBoundingClientRect();
+          resizing = true;
+          pointerId = event.pointerId;
+          startX = event.clientX;
+          startY = event.clientY;
+          startWidth = rect.width;
+          startHeight = rect.height;
+
+          // 좌하단은 고정하고 우상단 모서리만 이동시킴.
+          roadviewMiniMapWrap.style.width = startWidth + "px";
+          roadviewMiniMapWrap.style.height = startHeight + "px";
+
+          document.body.classList.add("roadview-mini-resizing");
+
+          try {
+            roadviewMiniResizeHandle.setPointerCapture(pointerId);
+          } catch (e) {}
+
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        function moveMiniResize(event) {
+          if (!resizing) return;
+          if (
+            pointerId !== null &&
+            event.pointerId !== undefined &&
+            event.pointerId !== pointerId
+          ) return;
+
+          // 우상단을 왼쪽/아래쪽으로 끌면 미니맵이 작아짐.
+          const next = miniBounds(
+            startWidth + (event.clientX - startX),
+            startHeight - (event.clientY - startY)
+          );
+
+          roadviewMiniMapWrap.style.width = Math.round(next.width) + "px";
+          roadviewMiniMapWrap.style.height = Math.round(next.height) + "px";
+
+          relayoutMiniMap();
+
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        function finishMiniResize(event) {
+          if (!resizing) return;
+          if (
+            event &&
+            pointerId !== null &&
+            event.pointerId !== undefined &&
+            event.pointerId !== pointerId
+          ) return;
+
+          resizing = false;
+          document.body.classList.remove("roadview-mini-resizing");
+
+          try {
+            roadviewMiniResizeHandle.releasePointerCapture(pointerId);
+          } catch (e) {}
+
+          pointerId = null;
+          relayoutMiniMap();
+        }
+
+        roadviewMiniResizeHandle.addEventListener("pointerdown", beginMiniResize);
+        window.addEventListener("pointermove", moveMiniResize, { passive: false });
+        window.addEventListener("pointerup", finishMiniResize);
+        window.addEventListener("pointercancel", finishMiniResize);
+      }
+
+      installRoadviewMiniResize();
 
       function installRoadviewResize() {
         if (!roadviewResizeHandle || !roadviewPanel) return;
