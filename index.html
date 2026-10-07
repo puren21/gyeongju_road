@@ -8858,6 +8858,97 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 지도 도구를 상단 지도 메뉴 옆 가로형으로 배치 ===== */
+  .top-toolbar #mapTools {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    z-index: auto !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    transform: none !important;
+    height: 48px !important;
+    overflow: hidden !important;
+    border: 1px solid #d9dde3 !important;
+    border-radius: 7px !important;
+    background: rgba(255,255,255,.98) !important;
+    box-shadow: 0 2px 7px rgba(0,0,0,.25) !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  .top-toolbar #mapTools button,
+  .top-toolbar #mapTools #locationBtn {
+    width: 42px !important;
+    min-width: 42px !important;
+    height: 48px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-right: 1px solid #e1e4e8 !important;
+    border-bottom: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: rgba(255,255,255,.98) !important;
+    color: #4e5964 !important;
+  }
+
+  .top-toolbar #mapTools button:last-child {
+    border-right: 0 !important;
+  }
+
+  .top-toolbar #mapTools button:hover {
+    background: #f4f6f8 !important;
+  }
+
+  .top-toolbar #mapTools button.active {
+    color: #fff !important;
+    background: #2f91f2 !important;
+  }
+
+  .top-toolbar #mapTools #locationBtn.active {
+    color: #2f91f2 !important;
+    background: #eef6ff !important;
+  }
+
+  .top-toolbar #mapTools svg {
+    width: 24px !important;
+    height: 24px !important;
+    display: block !important;
+    margin: auto !important;
+  }
+
+  @media (max-width:700px) {
+    .top-toolbar {
+      gap: 4px !important;
+    }
+
+    .top-toolbar #mapTools {
+      height: 40px !important;
+    }
+
+    .top-toolbar #mapTools button,
+    .top-toolbar #mapTools #locationBtn {
+      width: 36px !important;
+      min-width: 36px !important;
+      height: 40px !important;
+    }
+
+    .top-toolbar #mapTools svg {
+      width: 21px !important;
+      height: 21px !important;
+    }
+
+    body:not(.list-collapsed) .top-toolbar #mapTools,
+    body.list-collapsed .top-toolbar #mapTools {
+      visibility: visible !important;
+      pointer-events: auto !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -8905,42 +8996,6 @@
     <div id="scaleRatio">축척 1:-</div>
   </div>
 
-  <div id="mapTools" aria-label="지도 도구">
-    <button id="zoomInBtn" type="button" title="확대" aria-label="확대">+</button>
-    <button id="zoomOutBtn" type="button" title="축소" aria-label="축소">−</button>
-    <button id="distanceBtn" class="measure-icon" type="button" title="거리재기" aria-label="거리재기">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 17.5 17.5 5 19 6.5 6.5 19Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-        <path d="M8.2 14.3l1.2 1.2M10.7 11.8l1.2 1.2M13.2 9.3l1.2 1.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-        <circle cx="5" cy="19" r="1.7" fill="currentColor"/>
-        <circle cx="19" cy="5" r="1.7" fill="currentColor"/>
-      </svg>
-    </button>
-    <button id="areaBtn" class="measure-icon" type="button" title="면적재기" aria-label="면적재기">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 17 8 7l8-2 3 7-5 7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-        <circle cx="5" cy="17" r="1.7" fill="currentColor"/>
-        <circle cx="8" cy="7" r="1.7" fill="currentColor"/>
-        <circle cx="16" cy="5" r="1.7" fill="currentColor"/>
-        <circle cx="19" cy="12" r="1.7" fill="currentColor"/>
-        <circle cx="14" cy="19" r="1.7" fill="currentColor"/>
-      </svg>
-    </button>
-    <button id="roadWidthBtn" class="measure-icon" type="button" title="도로폭 측정" aria-label="도로폭 측정">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M5 4v16M19 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M7.2 12h9.6M7.2 12l3-3M7.2 12l3 3M16.8 12l-3-3M16.8 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
-
-    <button id="locationBtn" type="button" title="현위치" aria-label="현위치">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 2.8a7.1 7.1 0 0 0-7.1 7.1c0 5.2 7.1 11.3 7.1 11.3s7.1-6.1 7.1-11.3A7.1 7.1 0 0 0 12 2.8Z"
-              fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
-        <circle cx="12" cy="9.9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.9"/>
-      </svg>
-    </button>
-  </div>
   <div id="measureHint">
     <span class="measure-guide">지점을 클릭하고 마우스 오른쪽 버튼으로 완료하세요.</span>
     <button id="measureUndoBtn" type="button">한 단계 취소</button>
@@ -9030,6 +9085,44 @@
         </div>
       </div>
     </div>
+
+
+  <div id="mapTools" aria-label="지도 도구">
+    <button id="zoomInBtn" type="button" title="확대" aria-label="확대">+</button>
+    <button id="zoomOutBtn" type="button" title="축소" aria-label="축소">−</button>
+    <button id="distanceBtn" class="measure-icon" type="button" title="거리재기" aria-label="거리재기">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 17.5 17.5 5 19 6.5 6.5 19Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M8.2 14.3l1.2 1.2M10.7 11.8l1.2 1.2M13.2 9.3l1.2 1.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="5" cy="19" r="1.7" fill="currentColor"/>
+        <circle cx="19" cy="5" r="1.7" fill="currentColor"/>
+      </svg>
+    </button>
+    <button id="areaBtn" class="measure-icon" type="button" title="면적재기" aria-label="면적재기">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 17 8 7l8-2 3 7-5 7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <circle cx="5" cy="17" r="1.7" fill="currentColor"/>
+        <circle cx="8" cy="7" r="1.7" fill="currentColor"/>
+        <circle cx="16" cy="5" r="1.7" fill="currentColor"/>
+        <circle cx="19" cy="12" r="1.7" fill="currentColor"/>
+        <circle cx="14" cy="19" r="1.7" fill="currentColor"/>
+      </svg>
+    </button>
+    <button id="roadWidthBtn" class="measure-icon" type="button" title="도로폭 측정" aria-label="도로폭 측정">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4v16M19 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M7.2 12h9.6M7.2 12l3-3M7.2 12l3 3M16.8 12l-3-3M16.8 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <button id="locationBtn" type="button" title="현위치" aria-label="현위치">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.8a7.1 7.1 0 0 0-7.1 7.1c0 5.2 7.1 11.3 7.1 11.3s7.1-6.1 7.1-11.3A7.1 7.1 0 0 0 12 2.8Z"
+              fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+        <circle cx="12" cy="9.9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.9"/>
+      </svg>
+    </button>
+  </div>
 
     <button id="roadviewBtn" class="top-square-button" type="button" title="로드뷰" aria-label="로드뷰">
       <img class="roadview-custom-icon" src="data:image/webp;base64,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" alt="" aria-hidden="true">
@@ -11217,22 +11310,80 @@
         const path = (road && (road.pathFine || road.pathMedium || road.pathCoarse)) || [];
         if (path.length < 2 || !nearest) return null;
 
-        const i = Math.max(0, Math.min(path.length - 2, nearest.segmentIndex || 0));
-        const a = path[Math.max(0, i - 2)];
-        const b = path[Math.min(path.length - 1, i + 3)];
-
         const center = nearest.position;
-        const aLocal = roadWidthToLocal([a.getLng(), a.getLat()], center);
-        const bLocal = roadWidthToLocal([b.getLng(), b.getLat()], center);
+        const segmentIndex = Math.max(
+          0,
+          Math.min(path.length - 2, Number(nearest.segmentIndex) || 0)
+        );
 
-        const dx = bLocal.x - aLocal.x;
-        const dy = bLocal.y - aLocal.y;
-        const length = Math.hypot(dx, dy);
-        if (length < 0.05) return null;
+        /*
+         * 도로폭은 "클릭 지점이 놓인 실제 중심선 구간"에 직각으로 측정함.
+         * 이전처럼 앞뒤 여러 꼭지점을 넓게 평균하면 교차로/급커브 부근에서
+         * 방향이 비스듬해질 수 있으므로, 현재 segment 방향을 우선 사용함.
+         */
+        function segmentVector(index) {
+          if (index < 0 || index >= path.length - 1) return null;
+
+          const p0 = path[index];
+          const p1 = path[index + 1];
+          const a = roadWidthToLocal([p0.getLng(), p0.getLat()], center);
+          const b = roadWidthToLocal([p1.getLng(), p1.getLat()], center);
+
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 0.05) return null;
+
+          return { x: dx / len, y: dy / len, len: len };
+        }
+
+        let tangent = segmentVector(segmentIndex);
+
+        /*
+         * 클릭점이 정확히 꼭지점 부근이면 한쪽 segment만 쓰면 방향이 튈 수 있으므로,
+         * 인접 두 segment 방향을 길이 가중 평균함.
+         */
+        if (segmentIndex > 0 && segmentIndex < path.length - 2) {
+          const current = segmentVector(segmentIndex);
+          const previous = segmentVector(segmentIndex - 1);
+
+          if (current && previous) {
+            const vertex = path[segmentIndex];
+            const vertexLocal = roadWidthToLocal(
+              [vertex.getLng(), vertex.getLat()],
+              center
+            );
+            const distanceToVertex = Math.hypot(vertexLocal.x, vertexLocal.y);
+
+            if (distanceToVertex <= 2.5) {
+              let px = previous.x;
+              let py = previous.y;
+              const dot = px * current.x + py * current.y;
+
+              // 두 벡터가 반대방향으로 표현된 경우 방향 통일
+              if (dot < 0) {
+                px = -px;
+                py = -py;
+              }
+
+              const wx = px * Math.min(previous.len, 12) +
+                         current.x * Math.min(current.len, 12);
+              const wy = py * Math.min(previous.len, 12) +
+                         current.y * Math.min(current.len, 12);
+              const wl = Math.hypot(wx, wy);
+
+              if (wl > 0.05) {
+                tangent = { x: wx / wl, y: wy / wl };
+              }
+            }
+          }
+        }
+
+        if (!tangent) return null;
 
         return {
-          tangent: { x: dx / length, y: dy / length },
-          normal: { x: -dy / length, y: dx / length }
+          tangent: { x: tangent.x, y: tangent.y },
+          normal: { x: -tangent.y, y: tangent.x }
         };
       }
 
