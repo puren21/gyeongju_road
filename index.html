@@ -17152,6 +17152,7 @@
         const properties = feature.properties || {};
 
         if (layerId === "rural") {
+          migrateRuralRoadSummaryFields(properties);
           normalizeRuralRoadAutoStatus(properties);
         }
 
@@ -17746,9 +17747,16 @@
 
             if (!path || path.length < 2) return;
 
+            const exportProperties = Object.assign({}, road.properties || {});
+            migrateRuralRoadSummaryFields(exportProperties);
+            exportProperties["기타"] = roadStatusLabel(
+              getRoadStatusKey(road.properties || {}, "rural")
+            );
+            exportProperties["개설여부"] = exportProperties["기타"];
+
             features.push({
               type: "Feature",
-              properties: Object.assign({}, road.properties || {}),
+              properties: exportProperties,
               geometry: {
                 type: "LineString",
                 coordinates: path.map(function(point) {
@@ -19103,32 +19111,30 @@
       }
 
       function statusLengthSummary(group) {
-        const totals = { NORMAL:0, UNEXPANDED:0, UNOPENED:0, PLAN:0 };
-
         if (group.layerId === "rural") {
-          group.roads.forEach(function(road) {
-            const key = road.statusKey || getRoadStatusKey(road.properties || {}, group.layerId);
-            totals[key] = (totals[key] || 0) + roadGeometryLengthKm(road);
-          });
-        } else {
-          group.propertiesList.forEach(function(p) {
-            const key = getRoadStatusKey(p, group.layerId);
-            totals[key] = (totals[key] || 0) + parseRoadLength(p["연장"]);
-          });
+          const summary = getRuralRouteLengthSummary(group);
+
+          return [
+            summary.opened ? "개설 " + formatRoadLengthKm(summary.opened) + " km" : "",
+            summary.unopened ? "미개설 " + formatRoadLengthKm(summary.unopened) + " km" : "",
+            summary.planned ? "계획구간 " + formatRoadLengthKm(summary.planned) + " km" : ""
+          ].filter(Boolean).join(" · ") || "-";
         }
 
-        const unit = group.layerId === "city" ? " m" : " km";
-        const formatLength = group.layerId === "city"
-          ? formatRoadLength
-          : formatRoadLengthKm;
+        const totals = { NORMAL:0, UNEXPANDED:0, UNOPENED:0, PLAN:0 };
+
+        group.propertiesList.forEach(function(p) {
+          const key = getRoadStatusKey(p, group.layerId);
+          totals[key] = (totals[key] || 0) + parseRoadLength(p["연장"]);
+        });
 
         const unopenedTotal =
           (totals.UNOPENED || 0) + (totals.UNEXPANDED || 0);
 
         return [
-          totals.NORMAL ? "개설 " + formatLength(totals.NORMAL) + unit : "",
-          unopenedTotal ? "미개설 " + formatLength(unopenedTotal) + unit : "",
-          totals.PLAN ? "계획구간 " + formatLength(totals.PLAN) + unit : ""
+          totals.NORMAL ? "개설 " + formatRoadLength(totals.NORMAL) + " m" : "",
+          unopenedTotal ? "미개설 " + formatRoadLength(unopenedTotal) + " m" : "",
+          totals.PLAN ? "계획구간 " + formatRoadLength(totals.PLAN) + " m" : ""
         ].filter(Boolean).join(" · ") || "-";
       }
 
@@ -19760,6 +19766,84 @@
         return "개설";
       }
 
+      function ruralRoadLengthValue(value) {
+        if (value === null || value === undefined || String(value).trim() === "") {
+          return 0;
+        }
+        const n = Number(String(value).replace(/,/g, "").trim());
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function formatRuralGeoJSONLength(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return "0";
+        const rounded = Math.round((n + Number.EPSILON) * 100) / 100;
+        return String(rounded);
+      }
+
+      function migrateRuralRoadSummaryFields(properties) {
+        if (!properties) return properties;
+
+        // 기존 GeoJSON 필드 호환:
+        // 포장 -> 개설, 미포장 -> 미개설, 계획구간 신규 추가.
+        if (
+          (properties["개설"] === undefined || properties["개설"] === null || String(properties["개설"]).trim() === "") &&
+          properties["포장"] !== undefined
+        ) {
+          properties["개설"] = properties["포장"];
+        }
+
+        if (
+          (properties["미개설"] === undefined || properties["미개설"] === null || String(properties["미개설"]).trim() === "") &&
+          properties["미포장"] !== undefined
+        ) {
+          properties["미개설"] = properties["미포장"];
+        }
+
+        if (
+          properties["계획구간"] === undefined ||
+          properties["계획구간"] === null ||
+          String(properties["계획구간"]).trim() === ""
+        ) {
+          properties["계획구간"] = "0";
+        }
+
+        // 새 스키마에서는 포장/미포장 필드를 사용하지 않음.
+        delete properties["포장"];
+        delete properties["미포장"];
+
+        const opened = ruralRoadLengthValue(properties["개설"]);
+        const unopened = ruralRoadLengthValue(properties["미개설"]);
+        const planned = ruralRoadLengthValue(properties["계획구간"]);
+
+        properties["개설"] = formatRuralGeoJSONLength(opened);
+        properties["미개설"] = formatRuralGeoJSONLength(unopened);
+        properties["계획구간"] = formatRuralGeoJSONLength(planned);
+        properties["총연장"] = formatRuralGeoJSONLength(
+          opened + unopened + planned
+        );
+
+        return properties;
+      }
+
+      function getRuralRouteLengthSummary(group) {
+        const list = group && group.propertiesList ? group.propertiesList : [];
+        const props = list[0] || {};
+
+        migrateRuralRoadSummaryFields(props);
+
+        const opened = ruralRoadLengthValue(props["개설"]);
+        const unopened = ruralRoadLengthValue(props["미개설"]);
+        const planned = ruralRoadLengthValue(props["계획구간"]);
+
+        return {
+          opened: opened,
+          unopened: unopened,
+          planned: planned,
+          total: opened + unopened + planned
+        };
+      }
+
       function ruralRoadNumber(value) {
         if (value === null || value === undefined) return 0;
         const match = String(value).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
@@ -19790,19 +19874,12 @@
 
       function updateRuralRoadStatusField(form) {
         if (!form) return "";
-        const gubun = form.querySelector('[name="gubun"]');
-        const lane = form.querySelector('[name="laneSelected"]');
-        const width = form.querySelector('[name="widthSelected"]');
+
         const status = form.querySelector('[name="status"]');
+        if (!status) return "";
 
-        const value = classifyRuralRoadStatus(
-          gubun ? gubun.value : "",
-          lane ? lane.value : "",
-          width ? width.value : ""
-        );
-
-        if (status) status.value = value;
-        return value;
+        // 개설/미개설/계획구간은 GeoJSON의 명시 상태를 그대로 사용.
+        return status.value || "";
       }
 
       function buildRoadEditField(label, name, value, type, options, readOnly) {
@@ -23881,9 +23958,18 @@
             const path = group.paths[index] || road.pathFine || [];
             if (!path || path.length < 2) return;
 
+            const exportProperties = Object.assign({}, road.properties || {});
+            if (group.layerId === "rural") {
+              migrateRuralRoadSummaryFields(exportProperties);
+              exportProperties["기타"] = roadStatusLabel(
+                getRoadStatusKey(road.properties || {}, "rural")
+              );
+              exportProperties["개설여부"] = exportProperties["기타"];
+            }
+
             features.push({
               type: "Feature",
-              properties: Object.assign({}, road.properties || {}),
+              properties: exportProperties,
               geometry: {
                 type: "LineString",
                 coordinates: path.map(function(point) {
@@ -24832,20 +24918,17 @@
           popupEditRow("구간현황", "statusSummary", statusLengthSummary(group), "text", null, true) +
           popupEditRow("차선현황", "laneSummary", rangeValues(list, "차선"), "text", null, true) +
           popupEditRow("도로폭", "widthSummary", rangeValues(list, "도로폭"), "text", null, true, "m") +
-          popupEditRow("총연장", "totalLength", formatRoadLengthKm(groupRoadGeometryTotalKm(group)), "text", null, true, "km") +
+          popupEditRow("총연장", "totalLength", formatRoadLengthKm(getRuralRouteLengthSummary(group).total), "text", null, true, "km") +
           popupEditRow("차선현황(선택구간)", "laneSelected", safe(props["차선"]) === "-" ? "" : props["차선"], "text") +
           popupEditRow("도로폭(선택구간)", "widthSelected", safe(props["도로폭"]) === "-" ? "" : props["도로폭"], "text", null, false, "m") +
           popupEditRow("연장(선택구간)", "length", formatRoadLengthKm(roadGeometryLengthKm(road)), "text", null, true, "km") +
           popupEditRow("기점", "start", safe(props["기점"]) === "-" ? "" : props["기점"], "text") +
           popupEditRow("종점", "end", safe(props["종점"]) === "-" ? "" : props["종점"], "text") +
+          popupEditRow("특이사항", "specialNote", safe(props["특이사항"]) === "-" ? "" : props["특이사항"], "text", null, true) +
           popupEditRow(
             "노선상태",
             "status",
-            classifyRuralRoadStatus(
-              String(props.GUBUN || props["구분"] || getRoadGroupTypeLabel(group)),
-              safe(props["차선"]) === "-" ? "" : props["차선"],
-              safe(props["도로폭"]) === "-" ? "" : props["도로폭"]
-            ),
+            roadStatusLabel(getRoadStatusKey(props, "rural")),
             "text",
             null,
             true
@@ -24922,12 +25005,13 @@
                 row("구간현황", statusLengthSummary(group), "", "wrap-status") +
                 row("차선현황", rangeValues(list, "차선")) +
                 row("도로폭", rangeValues(list, "도로폭"), " m") +
-                row("총연장", formatRoadLengthKm(groupRoadGeometryTotalKm(group)), " km") +
+                row("총연장", formatRoadLengthKm(getRuralRouteLengthSummary(group).total), " km") +
                 row("차선현황(선택구간)", current["차선"] !== undefined && current["차선"] !== null && String(current["차선"]).trim() !== "" ? current["차선"] : "-") +
                 row("도로폭(선택구간)", current["도로폭"] !== undefined && current["도로폭"] !== null && String(current["도로폭"]).trim() !== "" ? current["도로폭"] : "-", current["도로폭"] !== undefined && current["도로폭"] !== null && String(current["도로폭"]).trim() !== "" ? " m" : "") +
                 row("연장(선택구간)", formatRoadLengthKm(roadGeometryLengthKm(road)), " km") +
                 row("기점", joinValues(uniqueValues(list, "기점"))) +
                 row("종점", joinValues(uniqueValues(list, "종점"))) +
+                row("특이사항", joinValues(uniqueValues(list, "특이사항")), "", "wrap-status") +
                 row("노선상태", roadStatusLabel(currentStatus))
               )) +
           '</div>' +
@@ -25682,9 +25766,33 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return "NORMAL";
         }
 
-        // 농어촌도로는 차선/도로폭 기준 자동판정을 항상 우선 적용.
-        // 초기 로딩 때도 편집/저장 후와 동일한 기준을 사용해야
-        // 새로고침 직후부터 선형이 정확히 표시됨.
+        // 농어촌도로 상태는 GeoJSON의 명시 상태를 우선함.
+        // 기존 표현인 포장/미포장도 각각 개설/미개설로 호환.
+        const explicitStatus = String(
+          properties["기타"] ??
+          properties["개설여부"] ??
+          properties.Opened ??
+          properties.Opend ??
+          properties["노선상태"] ??
+          ""
+        ).trim();
+
+        if (explicitStatus.includes("계획")) return "PLAN";
+        if (
+          explicitStatus.includes("미개설") ||
+          explicitStatus.includes("미포장")
+        ) {
+          return "UNOPENED";
+        }
+        if (
+          explicitStatus === "개설" ||
+          explicitStatus === "포장" ||
+          (explicitStatus.includes("포장") && !explicitStatus.includes("미포장"))
+        ) {
+          return "NORMAL";
+        }
+
+        // 명시 상태가 없는 과거 데이터만 차선/도로폭 기준을 보조적으로 사용.
         const gubun =
           properties["구분"] ||
           properties.GUBUN ||
@@ -25706,7 +25814,6 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           "";
 
         const autoStatus = classifyRuralRoadStatus(gubun, lane, width);
-
         if (autoStatus === "미개설") return "UNOPENED";
         if (autoStatus === "계획구간") return "PLAN";
         return "NORMAL";
@@ -25715,34 +25822,14 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
       function normalizeRuralRoadAutoStatus(properties) {
         if (!properties) return "계획구간";
 
-        const gubun =
-          properties["구분"] ||
-          properties.GUBUN ||
-          properties.gubun ||
-          "";
+        migrateRuralRoadSummaryFields(properties);
 
-        const lane =
-          properties["차선"] ??
-          properties["차선현황"] ??
-          properties.lane ??
-          properties.LANE ??
-          "";
+        const statusKey = getRoadStatusKey(properties, "rural");
+        const status = roadStatusLabel(statusKey);
 
-        const width =
-          properties["도로폭"] ??
-          properties["폭원"] ??
-          properties.width ??
-          properties.WIDTH ??
-          "";
-
-        const status = classifyRuralRoadStatus(gubun, lane, width);
-
-        setPropertyValue(
-          properties,
-          ["기타","Opened","Opend","개설여부"],
-          "기타",
-          status
-        );
+        // 기타는 개설/미개설/계획구간 3분류로 유지.
+        properties["기타"] = status;
+        properties["개설여부"] = status;
 
         return status;
       }
