@@ -17830,7 +17830,23 @@
             }
 
             if (roadviewMode) {
+              // 로드뷰 실행 중 라인을 클릭하면 로드뷰 위치를 갱신하면서
+              // 해당 선택구간의 노선 속성창도 함께 표시함.
+              kakao.maps.event.preventMap();
+              suppressBasePlaceClickUntil = Date.now() + 350;
               openRoadview(event.latLng);
+
+              if (roadEditSessionGroupKey) {
+                if (roadEditSessionGroupKey === groupKey) {
+                  selectRoadSegmentDuringEdit(event.latLng, groupKey, road);
+                } else {
+                  alert("현재 편집 중인 노선을 먼저 저장하거나 편집을 종료해 주세요.");
+                  syncRoadPopupEditToggle(roadEditSessionGroupKey, true);
+                }
+                return;
+              }
+
+              showInfo(event.latLng, groupKey, road);
               return;
             }
 
