@@ -7224,6 +7224,58 @@
     overscroll-behavior:contain;
   }
 }
+
+  /* ===== 2026-10-07: 노선정보 상단 편집 버튼 ===== */
+  .road-popup .road-header-edit-btn {
+    flex: 0 0 auto;
+    min-width: 72px;
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid #111;
+    border-radius: 7px;
+    background: #fff;
+    color: #111 !important;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 32px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: none;
+  }
+
+  .road-popup .road-header-edit-btn:hover {
+    background: #f2f2f7;
+  }
+
+  .road-popup .popup-title-tools {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-areas:
+      "visibility visibility"
+      "edit edit";
+    justify-items: end;
+    gap: 5px;
+  }
+
+  .road-popup .popup-title-tools .road-visibility-inline {
+    grid-area: visibility;
+  }
+
+  .road-popup .popup-title-tools .road-header-edit-btn {
+    grid-area: edit;
+  }
+
+  @media (max-width:700px) {
+    .road-popup .road-header-edit-btn {
+      min-width: 68px;
+      height: 32px;
+      padding: 0 12px;
+      font-size: 12.5px;
+      line-height: 30px;
+    }
+  }
+
 </style>
 
 </head>
@@ -7247,7 +7299,8 @@
     <ul class="road-legend-status" aria-label="도로 개설 상태">
       <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusNormal" d="M2 12H46" stroke="#737d89" stroke-width="4"/></svg><span>개설</span></li>
       <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusUnexpanded" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="6 4"/></svg><span>미확장</span></li>
-      <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusUnopened" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="1 5" stroke-linecap="round"/></svg><span>미개설</span></li>
+      <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusUnopened" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="8 5"/></svg><span>미개설</span></li>
+      <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusPlan" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="1 6" stroke-linecap="round"/></svg><span>계획</span></li>
     </ul>
     </div>
   </aside>
@@ -10118,7 +10171,8 @@
       const roadStatusFilters = {
         NORMAL: true,
         UNOPENED: true,
-        UNEXPANDED: true
+        UNEXPANDED: true,
+        PLAN: true
       };
 
       let selectedKey = null;
@@ -11202,9 +11256,14 @@
           ? getStatusStrokeStyle(road.statusKey)
           : layerConfig.lineStyle;
 
-        // 경주시 농어촌도로 미개설 구간은 항상 대시로 표시.
+        // 경주시 농어촌도로 개설상태 표현 고정:
+        // 개설=실선, 미개설=대시, 계획=닷.
         if (road.layerId === "rural" && road.statusKey === "UNOPENED") {
           requestedStyle = "dash";
+        } else if (road.layerId === "rural" && road.statusKey === "PLAN") {
+          requestedStyle = "dot";
+        } else if (road.layerId === "rural" && road.statusKey === "NORMAL") {
+          requestedStyle = "solid";
         }
 
         if (requestedStyle === "none") {
@@ -13501,10 +13560,7 @@
           return;
         }
 
-        if (layerId === "rural") {
-          const length = parseRoadLength(properties["연장"]);
-          ruralTotalLengths.set(number, (ruralTotalLengths.get(number) || 0) + length);
-        }
+        // 농어촌도로 총연장은 속성값이 아니라 실제 라인 geometry 길이로 계산함.
 
         const groupKey = layerId + "::" + number;
         const color = getColor(properties, layerId);
@@ -13537,7 +13593,15 @@
 
           if (path.length < 2) return;
           group.paths.push(path);
-          group.roads.push(drawRoad(path, properties, layerId, groupKey, color, statusKey));
+          const roadObject = drawRoad(path, properties, layerId, groupKey, color, statusKey);
+          group.roads.push(roadObject);
+
+          if (layerId === "rural") {
+            ruralTotalLengths.set(
+              number,
+              (ruralTotalLengths.get(number) || 0) + roadPathLengthKm(path)
+            );
+          }
         });
       }
 
@@ -13752,7 +13816,9 @@
           strokeStyle:
             layerId === "rural" && statusKey === "UNOPENED"
               ? "dash"
-              : getStatusStrokeStyle(statusKey),
+              : (layerId === "rural" && statusKey === "PLAN"
+                  ? "dot"
+                  : getStatusStrokeStyle(statusKey)),
           zIndex: 30
         });
 
@@ -14400,16 +14466,26 @@
       }
 
       function statusLengthSummary(group) {
-        const totals = { NORMAL:0, UNEXPANDED:0, UNOPENED:0 };
-        group.propertiesList.forEach(function(p) {
-          const key = getRoadStatusKey(p, group.layerId);
-          totals[key] += parseRoadLength(p["연장"]);
-        });
+        const totals = { NORMAL:0, UNEXPANDED:0, UNOPENED:0, PLAN:0 };
+
+        if (group.layerId === "rural") {
+          group.roads.forEach(function(road) {
+            const key = road.statusKey || getRoadStatusKey(road.properties || {}, group.layerId);
+            totals[key] = (totals[key] || 0) + roadGeometryLengthKm(road);
+          });
+        } else {
+          group.propertiesList.forEach(function(p) {
+            const key = getRoadStatusKey(p, group.layerId);
+            totals[key] = (totals[key] || 0) + parseRoadLength(p["연장"]);
+          });
+        }
+
         const unit = group.layerId === "city" ? " m" : " km";
         return [
           totals.NORMAL ? "개설 " + formatRoadLength(totals.NORMAL) + unit : "",
           totals.UNEXPANDED ? "미확장 " + formatRoadLength(totals.UNEXPANDED) + unit : "",
-          totals.UNOPENED ? "미개설 " + formatRoadLength(totals.UNOPENED) + unit : ""
+          totals.UNOPENED ? "미개설 " + formatRoadLength(totals.UNOPENED) + unit : "",
+          totals.PLAN ? "계획 " + formatRoadLength(totals.PLAN) + unit : ""
         ].filter(Boolean).join(" · ") || "-";
       }
 
@@ -15012,6 +15088,7 @@
       function statusValueFromKey(statusKey) {
         if (statusKey === "UNOPENED") return "미개설";
         if (statusKey === "UNEXPANDED") return "미확장";
+        if (statusKey === "PLAN") return "계획";
         return "개설";
       }
 
@@ -15124,11 +15201,11 @@
             "status",
             statusValueFromKey(currentStatus),
             "select",
-            ["개설", "미확장", "미개설"]
+            ["개설", "미확장", "미개설", "계획"]
           );
           fields += buildRoadEditField("차선", "lane", safe(props["차선"]) === "-" ? "" : props["차선"]);
           fields += buildRoadEditField("도로폭", "width", safe(props["도로폭"]) === "-" ? "" : props["도로폭"]);
-          fields += buildRoadEditField("연장", "length", safe(props["연장"]) === "-" ? "" : props["연장"]);
+          fields += buildRoadEditField("연장", "length", formatRoadLength(roadGeometryLengthKm(road)), "text", null, true);
           fields += buildRoadEditField("기점", "start", safe(props["기점"]) === "-" ? "" : props["기점"]);
           fields += buildRoadEditField("종점", "end", safe(props["종점"]) === "-" ? "" : props["종점"]);
         }
@@ -15234,7 +15311,7 @@
           if (values.start !== undefined) setPropertyValue(props, ["시점"], "시점", values.start);
           if (values.end !== undefined) setPropertyValue(props, ["종점"], "종점", values.end);
         } else {
-          if (values.status !== undefined) setPropertyValue(props, ["Opened","Opend","개설여부"], "Opened", values.status);
+          if (values.status !== undefined) setPropertyValue(props, ["기타","Opened","Opend","개설여부"], "기타", values.status);
           if (values.lane !== undefined) setPropertyValue(props, ["차선"], "차선", values.lane);
           if (values.width !== undefined) setPropertyValue(props, ["도로폭"], "도로폭", values.width);
           if (values.length !== undefined) setPropertyValue(props, ["연장"], "연장", values.length);
@@ -15257,10 +15334,7 @@
         });
 
         if (group.layerId === "rural") {
-          const total = group.propertiesList.reduce(function(sum, p) {
-            return sum + parseRoadLength(p["연장"]);
-          }, 0);
-          ruralTotalLengths.set(group.number, total);
+          syncRuralGeometryTotal(group);
         }
 
         applyRoadVisibility();
@@ -15397,7 +15471,7 @@
           values.status = data.get("status") || "개설";
           values.lane = data.get("lane") || "";
           values.width = data.get("width") || "";
-          values.length = data.get("length") || "";
+          values.length = formatRoadLength(roadGeometryLengthKm(road));
           values.start = data.get("start") || "";
           values.end = data.get("end") || "";
         }
@@ -16947,15 +17021,26 @@
           .catch(function(error) { console.error(error); });
       }
 
-      function roadPopupActions(group) {
+      function roadPopupHeaderEditButton(group) {
         const encodedKey = encodeURIComponent(group.key);
+        return '<button type="button" class="road-header-edit-btn road-edit-btn" data-group-key="' +
+          encodedKey + '">편집</button>';
+      }
+
+      function roadPopupTitleTools(group) {
+        return '<div class="popup-title-tools">' +
+          roadPopupVisibilityToggle(group) +
+          roadPopupHeaderEditButton(group) +
+        '</div>';
+      }
+
+      function roadPopupActions(group) {
         return '<div class="road-advanced-section">' +
           '<button type="button" class="road-advanced-open">' +
             '<span>고급기능</span>' +
             '<span class="road-advanced-chevron">›</span>' +
           '</button>' +
           '<div class="road-popup-actions road-advanced-menu" hidden>' +
-            '<button type="button" class="road-edit-btn" data-group-key="' + encodedKey + '">편집</button>' +
             '<button type="button" class="road-export-btn">GeoJSON 저장</button>' +
           '</div>' +
         '</div>';
@@ -16971,7 +17056,7 @@
               '<div class="popup-eyebrow">노선 정보</div>' +
               '<div class="popup-title-line">' +
                 '<div class="popup-title">시도 ' + escapeHTML(group.number) + '</div>' +
-                roadPopupVisibilityToggle(group) +
+                roadPopupTitleTools(group) +
               '</div>' +
             '</div>' +
             '<div class="road-attributes">' +
@@ -17006,10 +17091,10 @@
             row("구간현황", statusLengthSummary(group), "", "wrap-status") +
             row("차선현황", rangeValues(list, "차선")) +
             row("도로폭", rangeValues(list, "도로폭"), " m") +
-            row("총연장", formatRoadLength(ruralTotalLengths.get(group.number) || 0), " km") +
+            row("총연장", formatRoadLength(groupRoadGeometryTotalKm(group)), " km") +
             row("차선현황(선택구간)", current["차선"] !== undefined && current["차선"] !== null && String(current["차선"]).trim() !== "" ? current["차선"] : "-") +
             row("도로폭(선택구간)", current["도로폭"] !== undefined && current["도로폭"] !== null && String(current["도로폭"]).trim() !== "" ? current["도로폭"] : "-", current["도로폭"] !== undefined && current["도로폭"] !== null && String(current["도로폭"]).trim() !== "" ? " m" : "") +
-            row("연장(선택구간)", current["연장"] !== undefined && current["연장"] !== null && String(current["연장"]).trim() !== "" ? formatRoadLength(parseRoadLength(current["연장"])) : "-", current["연장"] !== undefined && current["연장"] !== null && String(current["연장"]).trim() !== "" ? " km" : "") +
+            row("연장(선택구간)", formatRoadLength(roadGeometryLengthKm(road)), " km") +
             row("기점", joinValues(uniqueValues(list, "기점"))) +
             row("종점", joinValues(uniqueValues(list, "종점"))) +
             row("노선상태", roadStatusLabel(currentStatus)) +
@@ -17355,12 +17440,14 @@
         ).trim();
         if (status.includes("미개설")) return "UNOPENED";
         if (status.includes("미확장")) return "UNEXPANDED";
+        if (status.includes("계획")) return "PLAN";
         return "NORMAL";
       }
 
       function roadStatusLabel(statusKey) {
         if (statusKey === "UNOPENED") return "미개설";
         if (statusKey === "UNEXPANDED") return "미확장";
+        if (statusKey === "PLAN") return "계획";
         return "개설";
       }
 
@@ -17371,6 +17458,8 @@
           style = STATUS_STYLES.UNOPENED_GAP;
         } else if (statusKey === "UNEXPANDED") {
           style = STATUS_STYLES.UNEXPANDED;
+        } else if (statusKey === "PLAN") {
+          style = "dot";
         }
 
         // "none"은 표시 여부에서 처리하고,
@@ -17390,6 +17479,55 @@
       function parseRoadLength(value) {
         const number = Number(String(value ?? "").replace(/,/g, "").trim());
         return Number.isFinite(number) ? number : 0;
+      }
+
+      // 지도 좌표(WGS84)를 이용하여 라인 실제 길이를 km 단위로 계산.
+      function roadPathLengthKm(path) {
+        if (!Array.isArray(path) || path.length < 2) return 0;
+        const R = 6371.0088;
+        let total = 0;
+
+        for (let i = 1; i < path.length; i++) {
+          const a = path[i - 1];
+          const b = path[i];
+          if (!a || !b || typeof a.getLat !== "function" || typeof b.getLat !== "function") continue;
+
+          const lat1 = a.getLat() * Math.PI / 180;
+          const lat2 = b.getLat() * Math.PI / 180;
+          const dLat = lat2 - lat1;
+          const dLng = (b.getLng() - a.getLng()) * Math.PI / 180;
+
+          const h =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1) * Math.cos(lat2) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+          total += 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+        }
+        return total;
+      }
+
+      function roadGeometryLengthKm(road) {
+        if (!road) return 0;
+        return roadPathLengthKm(
+          road.pathFine ||
+          road.pathMedium ||
+          road.pathCoarse ||
+          roadCurrentPath(road) ||
+          []
+        );
+      }
+
+      function groupRoadGeometryTotalKm(group) {
+        if (!group || !Array.isArray(group.roads)) return 0;
+        return group.roads.reduce(function(sum, item) {
+          return sum + roadGeometryLengthKm(item);
+        }, 0);
+      }
+
+      function syncRuralGeometryTotal(group) {
+        if (!group || group.layerId !== "rural") return;
+        ruralTotalLengths.set(group.number, groupRoadGeometryTotalKm(group));
       }
 
       function formatRoadLength(value) {
