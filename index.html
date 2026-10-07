@@ -15596,11 +15596,6 @@
       function focusSelectedRoadForEditing(groupKey, road) {
         // 편집 시작 시 현재 지도 범위/중심/축척을 그대로 유지함.
         return;
-      }, 60);
-
-        setTimeout(function() {
-          if (map) map.setCenter(focus);
-        }, 220);
       }
 
       function openRoadEditor(groupKey) {
