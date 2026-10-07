@@ -7942,6 +7942,22 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 저장 아이콘 변경상태 색상 ===== */
+  .road-popup .road-edit-save-btn,
+  .road-popup .road-edit-save-btn.no-changes {
+    color: #c7c7cc !important;
+  }
+
+  .road-popup .road-edit-save-btn.has-changes {
+    color: #34c759 !important;
+  }
+
+  .road-popup .road-edit-save-btn.is-saving {
+    color: #34c759 !important;
+    opacity: .5 !important;
+  }
+
 </style>
 
 </head>
@@ -15846,12 +15862,30 @@
         '</div>';
       }
 
+      function syncRoadEditSaveVisual() {
+        const popup = document.querySelector("body > .road-popup");
+        if (!popup) return;
+
+        const saveBtn = popup.querySelector(".road-edit-save-btn");
+        if (!saveBtn) return;
+
+        const hasChanges = roadEditHasUnsavedChanges();
+        saveBtn.classList.toggle("has-changes", hasChanges);
+        saveBtn.classList.toggle("no-changes", !hasChanges);
+        saveBtn.setAttribute(
+          "aria-label",
+          hasChanges ? "변경사항 저장" : "저장할 변경사항 없음"
+        );
+        saveBtn.title = hasChanges ? "변경사항 저장" : "저장할 변경사항 없음";
+      }
+
       function setRoadEditDirty(dirty) {
         roadEditSessionDirty = !!dirty;
         const panel = document.getElementById("roadEditPanel");
         if (panel) {
           panel.dataset.dirty = roadEditSessionDirty ? "1" : "0";
         }
+        syncRoadEditSaveVisual();
       }
 
       function hasRoadGeometryPendingChanges() {
@@ -18473,9 +18507,7 @@
               if (document.body.contains(this)) {
                 this.disabled = false;
                 this.classList.remove("is-saving");
-                if (!this.classList.contains("is-saved")) {
-                  this.title = "저장";
-                }
+                syncRoadEditSaveVisual();
               }
             }
           };
@@ -18511,6 +18543,7 @@
         bindRoadPopupEditActions(popup);
         bindRoadMemoActions(popup);
         startSacheonMemoSync();
+        syncRoadEditSaveVisual();
 
         if (
           roadEditSessionGroupKey &&
@@ -18944,7 +18977,7 @@
 
         return '<span class="road-save-inline">' +
           '<span class="road-save-label">저장</span>' +
-          '<button type="button" class="road-edit-save-btn" data-group-key="' +
+          '<button type="button" class="road-edit-save-btn no-changes" data-group-key="' +
             encodedKey + '" aria-label="저장" title="저장">' +
             '<svg class="road-edit-save-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.5,20c-1.52,0-2.81-.53-3.89-1.58s-1.61-2.33-1.61-3.85c0-1.3.39-2.46,1.18-3.48.78-1.02,1.81-1.67,3.08-1.95.42-1.53,1.25-2.78,2.5-3.73s2.67-1.43,4.25-1.43c1.95,0,3.6.68,4.96,2.04s2.04,3.01,2.04,4.96c1.15.13,2.1.63,2.86,1.49s1.14,1.86,1.14,3.01c0,1.25-.44,2.31-1.31,3.19s-1.94,1.31-3.19,1.31h-5.5c-.55,0-1.02-.2-1.41-.59s-.59-.86-.59-1.41v-5.15l-1.6,1.55-1.4-1.4,4-4,4,4-1.4,1.4-1.6-1.55v5.15h5.5c.7,0,1.29-.24,1.78-.73.48-.48.73-1.08.73-1.78s-.24-1.29-.73-1.78-1.08-.73-1.78-.73h-1.5v-2c0-1.38-.49-2.56-1.46-3.54s-2.15-1.46-3.54-1.46-2.56.49-3.54,1.46-1.46,2.15-1.46,3.54h-.5c-.97,0-1.79.34-2.48,1.03s-1.03,1.51-1.03,2.48.34,1.79,1.03,2.48c.68.68,1.51,1.03,2.48,1.03h2.5v2h-2.5Z"/></svg>' +
           '</button>' +
@@ -18981,14 +19014,9 @@
           const popup = document.querySelector("body > .road-popup");
           const saveBtn = popup && popup.querySelector(".road-edit-save-btn");
           if (saveBtn) {
-            saveBtn.classList.add("is-saved");
-            saveBtn.title = "저장됨";
-            setTimeout(function() {
-              if (document.body.contains(saveBtn)) {
-                saveBtn.classList.remove("is-saved");
-                saveBtn.title = "저장";
-              }
-            }, 900);
+            saveBtn.classList.remove("has-changes");
+            saveBtn.classList.add("no-changes");
+            saveBtn.title = "저장할 변경사항 없음";
           }
         }
 
