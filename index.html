@@ -500,13 +500,32 @@
     #listResizeHandle {
       position: absolute;
       top: 0;
-      right: -4px;
+      right: -5px;
       bottom: 0;
       z-index: 23;
-      width: 8px;
+      width: 10px;
       cursor: ew-resize;
       touch-action: none;
       background: transparent;
+    }
+
+    #listResizeHandle::after {
+      content: "";
+      position: absolute;
+      top: 12%;
+      bottom: 12%;
+      left: 50%;
+      width: 4px;
+      border-radius: 999px;
+      background: rgba(37, 143, 255, 0.48);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    #listResizeHandle:hover::after,
+    body.list-resizing #listResizeHandle::after {
+      width: 6px;
+      background: rgba(37, 143, 255, 0.92);
     }
 
     #listResizeHandle:hover,
@@ -1446,20 +1465,22 @@
       #listResizeHandle::after {
         content: "";
         position: absolute;
-        top: 8px;
+        top: 7px;
         left: 50%;
-        width: 58px;
-        height: 6px;
+        right: auto;
+        bottom: auto;
+        width: 64px;
+        height: 8px;
         border-radius: 999px;
-        background: rgba(37, 143, 255, 0.82);
+        background: rgba(37, 143, 255, 0.88);
         box-shadow: 0 1px 4px rgba(0,0,0,.22);
         transform: translateX(-50%);
         pointer-events: none;
       }
 
       body.list-resizing #listResizeHandle::after {
-        width: 70px;
-        height: 7px;
+        width: 76px;
+        height: 9px;
         background: rgba(37, 143, 255, 1);
       }
 
@@ -8475,11 +8496,12 @@
   .road-popup .road-popup-resize-handle {
     position: absolute;
     left: 0;
+    right: 0;
     bottom: 0;
-    width: 38px;
-    height: 38px;
+    width: auto;
+    height: 26px;
     z-index: 10005;
-    cursor: nesw-resize;
+    cursor: ns-resize;
     touch-action: none;
     user-select: none;
     pointer-events: auto;
@@ -8489,26 +8511,39 @@
   .road-popup .road-popup-resize-handle::before {
     content: "";
     position: absolute;
-    left: 7px;
+    left: 50%;
     bottom: 7px;
-    width: 16px;
-    height: 16px;
-    border-left: 3px solid rgba(37,136,246,.96);
-    border-bottom: 3px solid rgba(37,136,246,.96);
-    border-radius: 0 0 0 2px;
+    width: 68px;
+    height: 8px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(37,136,246,.88);
+    box-shadow: 0 1px 3px rgba(0,0,0,.18);
+    transform: translateX(-50%);
     box-sizing: border-box;
     pointer-events: none;
   }
 
+  .road-popup .road-popup-resize-handle:hover::before,
+  body.road-popup-resizing .road-popup .road-popup-resize-handle::before {
+    width: 80px;
+    height: 9px;
+    background: rgba(37,136,246,1);
+  }
+
   body.road-popup-resizing {
-    cursor: nesw-resize !important;
+    cursor: ns-resize !important;
     user-select: none !important;
   }
 
   @media (max-width:700px) {
     .road-popup .road-popup-resize-handle {
-      width: 38px;
-      height: 38px;
+      height: 30px;
+    }
+    .road-popup .road-popup-resize-handle::before {
+      width: 72px;
+      height: 9px;
+      bottom: 8px;
     }
   }
 
@@ -8516,6 +8551,75 @@
   /* ===== 2026-10-07: 노선 선택 말풍선 제거 ===== */
   .selected-route-balloon {
     display: none !important;
+  }
+
+
+  /* ===== 2026-10-07: 스카이뷰 정보보기 팝오버 ===== */
+  .top-map-switch {
+    overflow: visible !important;
+  }
+
+  .sky-btn-wrap {
+    position: relative;
+    height: 100%;
+  }
+
+  .sky-btn-wrap #skyBtn {
+    border-right: 0 !important;
+    border-radius: 0 7px 7px 0;
+  }
+
+  .sky-info-popover {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 50%;
+    z-index: 12050;
+    display: none;
+    min-width: 118px;
+    padding: 9px 11px;
+    border: 1px solid #d9dde3;
+    border-radius: 7px;
+    background: rgba(255,255,255,.98);
+    box-shadow: 0 3px 10px rgba(0,0,0,.22);
+    transform: translateX(-50%);
+    box-sizing: border-box;
+  }
+
+  .sky-btn-wrap:hover .sky-info-popover,
+  .sky-btn-wrap:focus-within .sky-info-popover,
+  .sky-btn-wrap.popover-open .sky-info-popover {
+    display: block;
+  }
+
+  .sky-info-option {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    color: #202124;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .sky-info-option input {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    accent-color: #2f91f2;
+  }
+
+  @media (max-width:700px) {
+    .sky-info-popover {
+      min-width: 112px;
+      padding: 9px 10px;
+    }
+    .sky-info-option {
+      font-size: 13px;
+      min-height: 30px;
+    }
   }
 
 </style>
@@ -8670,7 +8774,15 @@
   <div class="top-toolbar">
     <div class="top-map-switch" aria-label="지도 유형">
       <button id="normalBtn" class="active" type="button">지도</button>
-      <button id="skyBtn" type="button">스카이뷰</button>
+      <div id="skyBtnWrap" class="sky-btn-wrap">
+        <button id="skyBtn" type="button">스카이뷰</button>
+        <div id="skyInfoPopover" class="sky-info-popover" role="group" aria-label="스카이뷰 정보 표시 설정">
+          <label class="sky-info-option" for="skyInfoCheck">
+            <input id="skyInfoCheck" type="checkbox" checked>
+            <span>정보보기</span>
+          </label>
+        </div>
+      </div>
     </div>
 
     <button id="roadviewBtn" class="top-square-button" type="button" title="로드뷰" aria-label="로드뷰">
@@ -11492,6 +11604,9 @@
 
       const normalBtn = document.getElementById("normalBtn");
       const skyBtn = document.getElementById("skyBtn");
+      const skyBtnWrap = document.getElementById("skyBtnWrap");
+      const skyInfoPopover = document.getElementById("skyInfoPopover");
+      const skyInfoCheck = document.getElementById("skyInfoCheck");
       const roadviewBtn = document.getElementById("roadviewBtn");
       const layerBtn = document.getElementById("layerBtn");
       const layerPanel = document.getElementById("layerPanel");
@@ -11949,10 +12064,83 @@
         resetTownshipStyles();
       };
 
-      // 하이브리드는 기본 ON. 스카이뷰에서 끄면 순수 위성영상(SKYVIEW)으로 전환함.
+      // 하이브리드(정보보기)는 기본 ON.
       hybridCheck.checked = true;
+      if (skyInfoCheck) skyInfoCheck.checked = true;
+
+      function syncSkyInfoCheckFromHybrid() {
+        if (skyInfoCheck && hybridCheck) {
+          skyInfoCheck.checked = !!hybridCheck.checked;
+        }
+      }
+
+      function applySkyInfoSetting(checked) {
+        if (!hybridCheck) return;
+
+        hybridCheck.checked = !!checked;
+        syncSkyInfoCheckFromHybrid();
+
+        const keepExtraZoom = isSkyExtraZoomActive();
+        setSkyExtraZoom(false);
+
+        if (skyBtn.classList.contains("active")) {
+          switchBaseMapTypePreserveView(
+            hybridCheck.checked
+              ? kakao.maps.MapTypeId.HYBRID
+              : kakao.maps.MapTypeId.SKYVIEW
+          );
+
+          refreshRoadColorsForMapType();
+          updateBoundaryVisibility();
+          resetTownshipStyles();
+
+          if (keepExtraZoom && map.getLevel() === 1) {
+            setTimeout(function() {
+              setSkyExtraZoom(true);
+            }, 140);
+          }
+        }
+      }
+
+      if (skyInfoCheck) {
+        skyInfoCheck.addEventListener("change", function(event) {
+          event.stopPropagation();
+          applySkyInfoSetting(this.checked);
+        });
+      }
+
+      // 터치 환경에서는 스카이뷰 버튼을 길게 hover할 수 없으므로
+      // 버튼 포커스/클릭 후에도 팝오버를 잠시 열어 둠.
+      if (skyBtnWrap && skyBtn) {
+        let skyPopoverTimer = null;
+
+        function openSkyPopoverTemporarily() {
+          clearTimeout(skyPopoverTimer);
+          skyBtnWrap.classList.add("popover-open");
+          skyPopoverTimer = setTimeout(function() {
+            if (!skyBtnWrap.matches(":hover") && !skyBtnWrap.contains(document.activeElement)) {
+              skyBtnWrap.classList.remove("popover-open");
+            }
+          }, 2200);
+        }
+
+        skyBtn.addEventListener("click", openSkyPopoverTemporarily);
+        skyBtnWrap.addEventListener("mouseenter", function() {
+          clearTimeout(skyPopoverTimer);
+          skyBtnWrap.classList.add("popover-open");
+        });
+        skyBtnWrap.addEventListener("mouseleave", function() {
+          clearTimeout(skyPopoverTimer);
+          skyPopoverTimer = setTimeout(function() {
+            if (!skyBtnWrap.contains(document.activeElement)) {
+              skyBtnWrap.classList.remove("popover-open");
+            }
+          }, 250);
+        });
+      }
 
       hybridCheck.onchange = function () {
+        syncSkyInfoCheckFromHybrid();
         const keepExtraZoom = isSkyExtraZoomActive();
         setSkyExtraZoom(false);
 
@@ -11975,6 +12163,8 @@
             }, 140);
           }
         }
+
+        syncSkyInfoCheckFromHybrid();
       };
 
       function setSkyMap() {
@@ -20742,23 +20932,14 @@
 
         let resizing = false;
         let pointerId = null;
-        let startX = 0;
         let startY = 0;
-        let startWidth = 0;
         let startHeight = 0;
-        let fixedRight = 15;
         let fixedTop = 72;
 
-        function clampPopupSize(width, height) {
-          const minWidth = Math.min(245, Math.max(220, window.innerWidth - 24));
+        function clampPopupHeight(height) {
           const minHeight = Math.min(260, Math.max(180, window.innerHeight - 24));
-          const maxWidth = Math.max(minWidth, window.innerWidth - fixedRight - 8);
           const maxHeight = Math.max(minHeight, window.innerHeight - fixedTop - 8);
-
-          return {
-            width: Math.max(minWidth, Math.min(maxWidth, width)),
-            height: Math.max(minHeight, Math.min(maxHeight, height))
-          };
+          return Math.max(minHeight, Math.min(maxHeight, height));
         }
 
         function beginPopupResize(event) {
@@ -20767,19 +20948,14 @@
           const rect = popup.getBoundingClientRect();
           resizing = true;
           pointerId = event.pointerId;
-          startX = event.clientX;
           startY = event.clientY;
-          startWidth = rect.width;
           startHeight = rect.height;
-          fixedRight = Math.max(0, window.innerWidth - rect.right);
           fixedTop = rect.top;
 
-          // 우측/상단은 고정하고 좌측/하단을 움직여 크기를 변경함.
-          popup.style.left = "auto";
-          popup.style.right = fixedRight + "px";
+          // 하단 드래그바는 폭은 유지하고 높이만 조절함.
           popup.style.top = fixedTop + "px";
           popup.style.bottom = "auto";
-          popup.style.width = startWidth + "px";
+          popup.style.width = rect.width + "px";
           popup.style.height = startHeight + "px";
           popup.style.maxHeight = "none";
 
@@ -20799,14 +20975,12 @@
             event.pointerId !== pointerId
           ) return;
 
-          // 좌측으로 끌면 폭 증가, 아래쪽으로 끌면 높이 증가.
-          const next = clampPopupSize(
-            startWidth - (event.clientX - startX),
+          // 하단바를 아래로 끌면 높이 증가, 위로 끌면 높이 감소.
+          const nextHeight = clampPopupHeight(
             startHeight + (event.clientY - startY)
           );
 
-          popup.style.width = Math.round(next.width) + "px";
-          popup.style.height = Math.round(next.height) + "px";
+          popup.style.height = Math.round(nextHeight) + "px";
 
           event.preventDefault();
           event.stopPropagation();
