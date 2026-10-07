@@ -15462,6 +15462,8 @@
       let roadGeometryEditState = null;
       let geometryEditingGroupKey = null;
       let roadEditSessionGroupKey = null;
+      let roadEditSessionDirty = false;
+      let roadEditSaving = false;
 
       function roadEditorEscape(value) {
         return escapeHTML(value === undefined || value === null ? "" : String(value));
@@ -15553,6 +15555,106 @@
         '</div>';
       }
 
+      function setRoadEditDirty(dirty) {
+        roadEditSessionDirty = !!dirty;
+        const panel = document.getElementById("roadEditPanel");
+        if (panel) {
+          panel.dataset.dirty = roadEditSessionDirty ? "1" : "0";
+        }
+      }
+
+      function hasRoadGeometryPendingChanges() {
+        const state = roadGeometryEditState;
+        if (!state) return false;
+
+        if (
+          state.mode === "split" &&
+          state.splitPosition &&
+          Number.isInteger(state.splitSegmentIndex)
+        ) {
+          return true;
+        }
+
+        const original = state.originalPath || [];
+        const working = state.workingPath || [];
+        if (original.length !== working.length) return true;
+
+        for (let i = 0; i < original.length; i++) {
+          const a = original[i];
+          const b = working[i];
+          if (!a || !b) return true;
+          if (
+            Math.abs(a.getLat() - b.getLat()) > 1e-10 ||
+            Math.abs(a.getLng() - b.getLng()) > 1e-10
+          ) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function roadEditHasUnsavedChanges() {
+        return roadEditSessionDirty || hasRoadGeometryPendingChanges();
+      }
+
+      function finishRoadEditSession(groupKey) {
+        if (roadGeometryEditState) {
+          clearRoadGeometryEdit(false);
+        }
+        if (roadSplitEditState) {
+          clearRoadSplitEdit();
+        }
+
+        roadEditSessionGroupKey = null;
+        setRoadEditDirty(false);
+        document.body.classList.remove("road-edit-session-active");
+        closeRoadEditPanel(true);
+        syncRoadPopupEditToggle(groupKey, false);
+
+        if (selectedRoadGroupKey) {
+          setRoadGroupHighlight(selectedRoadGroupKey, true);
+          updateSelectedRouteBalloon();
+        }
+      }
+
+      async function requestRoadEditSessionOff(groupKey) {
+        if (!groupKey || roadEditSaving) {
+          if (groupKey) syncRoadPopupEditToggle(groupKey, true);
+          return;
+        }
+
+        if (roadEditSessionGroupKey !== groupKey) {
+          syncRoadPopupEditToggle(groupKey, false);
+          return;
+        }
+
+        if (!roadEditHasUnsavedChanges()) {
+          finishRoadEditSession(groupKey);
+          return;
+        }
+
+        const shouldSave = window.confirm(
+          "변경사항이 저장되지 않았습니다. 저장하시겠습니까?\\n\\n확인: 저장 후 편집 종료\\n취소: 저장하지 않고 편집 종료"
+        );
+
+        if (shouldSave) {
+          let saved = false;
+          if (roadGeometryEditState && roadGeometryEditState.groupKey === groupKey) {
+            saved = await saveRoadGeometryEdit({ keepEditing: false });
+          } else {
+            saved = await saveRoadAttributes(groupKey, { keepEditing: false });
+          }
+
+          if (!saved) {
+            syncRoadPopupEditToggle(groupKey, true);
+          }
+        } else {
+          finishRoadEditSession(groupKey);
+        }
+      }
+
+      window.requestRoadEditSessionOff = requestRoadEditSessionOff;
+
       function closeRoadEditPanel(force) {
         const panel = document.getElementById("roadEditPanel");
         if (!panel) return;
@@ -15577,32 +15679,8 @@
 
       function cancelRoadEditor() {
         const groupKey = roadEditSessionGroupKey;
-
-        if (roadGeometryEditState) {
-          // 같은 편집 세션에서는 현재 작업을 유지함.
-          if (roadGeometryEditState.groupKey === groupKey) {
-            return;
-          }
-          alert("현재 선형 편집을 먼저 저장하거나 취소해 주세요.");
-          return;
-        }
-
-        if (roadSplitEditState) {
-          clearRoadSplitEdit();
-        }
-
-        roadEditSessionGroupKey = null;
-        document.body.classList.remove("road-edit-session-active");
-        closeRoadEditPanel(true);
-
-        if (groupKey) {
-          syncRoadPopupEditToggle(groupKey, false);
-        }
-
-        if (selectedRoadGroupKey) {
-          setRoadGroupHighlight(selectedRoadGroupKey, true);
-          updateSelectedRouteBalloon();
-        }
+        if (!groupKey) return;
+        requestRoadEditSessionOff(groupKey);
       }
 
       window.closeRoadEditPanel = closeRoadEditPanel;
@@ -15716,7 +15794,7 @@
             '<button type="button" class="road-edit-close" onclick="cancelRoadEditor()">×</button>' +
           '</div>' +
           '<div class="road-edit-body">' +
-            '<div class="road-edit-note">편집 모드는 저장 또는 취소를 누를 때까지 유지됨. 선형 편집에서 꼭지점 이동·추가·삭제와 라인 나누기를 함께 사용할 수 있음. 라인을 나누더라도 두 구간은 같은 노선번호를 유지함.</div>' +
+            '<div class="road-edit-note">편집 모드는 상단 편집 스위치를 최종으로 끌 때까지 유지됨. 저장 후에도 편집 모드는 계속 켜져 있음. 선형 편집에서 꼭지점 이동·추가·삭제와 라인 나누기를 함께 사용할 수 있음. 라인을 나누더라도 두 구간은 같은 노선번호를 유지함.</div>' +
             '<form id="roadEditForm">' + fields + '</form>' +
             '<div class="road-edit-actions">' +
               '<button type="button" class="geometry" id="startGeometryEditBtn">선형 편집</button>' +
@@ -15727,14 +15805,26 @@
 
         document.body.appendChild(panel);
         roadEditSessionGroupKey = groupKey;
+        setRoadEditDirty(false);
         document.body.classList.add("road-edit-session-active");
         syncRoadPopupEditToggle(groupKey, true);
 
+        const editForm = document.getElementById("roadEditForm");
+        if (editForm) {
+          ["input", "change"].forEach(function(type) {
+            editForm.addEventListener(type, function(event) {
+              if (event.target && !event.target.readOnly) {
+                setRoadEditDirty(true);
+              }
+            });
+          });
+        }
+
         document.getElementById("saveRoadAttributesBtn").onclick = function() {
           if (roadGeometryEditState && roadGeometryEditState.groupKey === groupKey) {
-            saveRoadGeometryEdit();
+            saveRoadGeometryEdit({ keepEditing: true });
           } else {
-            saveRoadAttributes(groupKey);
+            saveRoadAttributes(groupKey, { keepEditing: true });
           }
         };
 
@@ -16021,7 +16111,7 @@
 
       function clearRoadSplitEdit() {
         const state = roadSplitEditState;
-        if (!state) return;
+        if (!state) return false;
 
         [state.hitLine, state.previewA, state.previewB].forEach(function(line) {
           if (line) {
@@ -16224,6 +16314,7 @@
         const saveButton = document.getElementById("saveRoadSplitBtn");
 
         try {
+          roadEditSaving = true;
           if (saveButton) {
             saveButton.disabled = true;
             saveButton.textContent = "저장 중";
@@ -16442,7 +16533,9 @@
         return applyOnlineRoadEdits(group, payload);
       }
 
-      async function saveRoadAttributes(groupKey) {
+      async function saveRoadAttributes(groupKey, options) {
+        options = options || {};
+        const keepEditing = options.keepEditing !== false;
         const group = groups.get(groupKey);
         const road = getEditableRoad(groupKey);
         const form = document.getElementById("roadEditForm");
@@ -16515,12 +16608,23 @@
           if (existingPopup) existingPopup.remove();
           createFixedRoadPopup(groupPopup(group, road));
 
-          roadEditSessionGroupKey = null;
-          closeRoadEditPanel(true);
+          setRoadEditDirty(false);
+
+          if (keepEditing) {
+            roadEditSessionGroupKey = groupKey;
+            document.body.classList.add("road-edit-session-active");
+            syncRoadPopupEditToggle(groupKey, true);
+          } else {
+            finishRoadEditSession(groupKey);
+          }
+
+          return true;
         } catch (error) {
           console.error(error);
           alert("온라인 도로정보 저장에 실패했습니다.\n\n" + error.message);
+          return false;
         } finally {
+          roadEditSaving = false;
           if (saveButton && document.body.contains(saveButton)) {
             saveButton.disabled = false;
             saveButton.textContent = "저장";
@@ -17231,6 +17335,7 @@
             }
 
             state.workingPath.splice(index, 1);
+          setRoadEditDirty(true);
             state.previewLine.setPath(state.workingPath);
 
             if (state.previewHitLine) {
@@ -17264,6 +17369,7 @@
             }
 
             state.activeConnectedEndpoints = [];
+            setRoadEditDirty(true);
             recalcGroupBounds(state.group);
             map.setCursor("move");
           });
@@ -17410,6 +17516,7 @@
 
         state.splitSegmentIndex = nearest.segmentIndex;
         state.splitPosition = nearest.position;
+        setRoadEditDirty(true);
         renderRoadGeometrySplitPreview(state);
       }
 
@@ -17638,7 +17745,7 @@
             ? '<button type="button" id="geometrySplitModeBtn" onclick="setRoadGeometryEditMode(\'split\')">라인 나누기</button>'
             : '') +
           '<button type="button" onclick="cancelRoadGeometryEdit()">취소</button>' +
-          '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit()">저장</button>';
+          '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>';
         document.body.appendChild(toolbar);
         enableGeometryEditToolbarDrag(toolbar);
         setRoadGeometryEditMode("vertex");
@@ -17646,7 +17753,9 @@
 
       window.startRoadGeometryEdit = startRoadGeometryEdit;
 
-      async function saveRoadGeometryEdit() {
+      async function saveRoadGeometryEdit(options) {
+        options = options || {};
+        const keepEditing = options.keepEditing !== false;
         const state = roadGeometryEditState;
         if (!state) return;
 
@@ -17686,6 +17795,7 @@
         }
 
         try {
+          roadEditSaving = true;
           if (saveButton) {
             saveButton.disabled = true;
             saveButton.textContent = "저장 중";
@@ -17821,8 +17931,15 @@
           await saveOnlineRoadEdits(group, payload);
 
           clearRoadGeometryEdit(true);
-          roadEditSessionGroupKey = null;
-          closeRoadEditPanel(true);
+          setRoadEditDirty(false);
+
+          if (keepEditing) {
+            roadEditSessionGroupKey = group.key;
+            document.body.classList.add("road-edit-session-active");
+            syncRoadPopupEditToggle(group.key, true);
+          } else {
+            finishRoadEditSession(group.key);
+          }
 
           // 새로 분할된 라인까지 정상 표시한 다음 선택 강조를 마지막에 다시 적용함.
           group.roads.forEach(function(item) {
@@ -17848,11 +17965,16 @@
             const existingPopup = document.querySelector("body > .road-popup");
             if (existingPopup) existingPopup.remove();
             createFixedRoadPopup(groupPopup(group, road));
+            syncRoadPopupEditToggle(group.key, keepEditing);
           }
+
+          return true;
         } catch (error) {
           console.error(error);
           alert("온라인 선형 저장에 실패했습니다.\n\n" + error.message);
+          return false;
         } finally {
+          roadEditSaving = false;
           const currentSaveButton = document.getElementById("saveRoadGeometryBtn");
           if (currentSaveButton) {
             currentSaveButton.disabled = false;
@@ -18001,9 +18123,10 @@
             if (this.checked) {
               openRoadEditor(groupKey);
             } else if (roadEditSessionGroupKey === groupKey) {
-              // 편집 중에는 스위치 OFF만으로 종료하지 않음.
-              // 반드시 저장 또는 취소 버튼으로 종료.
+              // 편집 스위치는 최종 종료 제어임.
+              // 저장하지 않은 변경이 있으면 저장 여부를 확인한 뒤 종료함.
               this.checked = true;
+              requestRoadEditSessionOff(groupKey);
             }
           };
         }
@@ -18445,10 +18568,7 @@
 
       function roadPopupHeaderEditButton(group) {
         const encodedKey = encodeURIComponent(group.key);
-        const panel = document.getElementById("roadEditPanel");
-        const checked =
-          !!panel &&
-          decodeURIComponent(panel.dataset.groupKey || "") === group.key;
+        const checked = roadEditSessionGroupKey === group.key;
 
         return '<span class="road-edit-inline">' +
           '<span class="road-edit-label">편집</span>' +
