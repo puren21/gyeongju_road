@@ -11011,14 +11011,45 @@
         return true;
       }
 
+      function syncRoadDerivedDisplayState(road) {
+        if (!road) return false;
+
+        const nextStatusKey = getRoadStatusKey(road.properties || {}, road.layerId);
+        const nextStyleKey = getStyleKey(road.properties || {}, road.layerId);
+
+        const changed =
+          road.statusKey !== nextStatusKey ||
+          road.styleKey !== nextStyleKey;
+
+        if (changed) {
+          road.statusKey = nextStatusKey;
+          road.styleKey = nextStyleKey;
+
+          const style = ROAD_STYLES[nextStyleKey];
+          if (style) road.color = style.color;
+
+          // 상태가 바뀌면 같은 축척에서도 solid/dash/dot을 다시 적용해야 함.
+          road._visualTier = null;
+        }
+
+        return changed;
+      }
+
       function roadShouldBeVisibleNow(road, viewport) {
+        syncRoadDerivedDisplayState(road);
+
+        const statusHidden =
+          road.layerId === "rural"
+            ? false
+            : isRoadStatusHidden(road.statusKey);
+
         return (
           LAYERS[road.layerId].visible &&
           isRoadDatasetVisible(road) &&
           roadStatusFilters[road.statusKey] &&
           isRoadLayerVisibleAtScale(road.layerId) &&
           isRoadObjectKindVisible(road) &&
-          !isRoadStatusHidden(road.statusKey) &&
+          !statusHidden &&
           extentIntersectsViewport(road.extent, viewport)
         );
       }
@@ -14496,7 +14527,10 @@
           !!road._visible &&
           isRoadDatasetVisible(road) &&
           isRoadLayerVisibleAtScale(road.layerId);
-        const statusHidden = isRoadStatusHidden(road.statusKey);
+        const statusHidden =
+          road.layerId === "rural"
+            ? false
+            : isRoadStatusHidden(road.statusKey);
         const isOff = hiddenRoadGroups.has(road.groupKey);
 
         if (roadVisible && !statusHidden && isOff) {
@@ -14598,9 +14632,9 @@
           setMapOptionsIfChanged(line, {
             strokeColor: getRoadLayerDisplayColor(road.styleKey, config),
             strokeWeight: mapStrokePx(
-              road.statusKey === "UNOPENED"
-                ? Math.max(config.width, STATUS_STYLES.UNOPENED_SIZE)
-                : config.width,
+              (road.statusKey === "UNOPENED" || road.statusKey === "UNEXPANDED")
+                ? Math.max(Number(config.width) || 1, STATUS_STYLES.UNOPENED_SIZE)
+                : Number(config.width) || 1,
               1
             ),
             strokeOpacity:
@@ -16285,6 +16319,8 @@
         const pathTier = getRoadPathTier();
 
         allRoads.forEach(function(road) {
+          syncRoadDerivedDisplayState(road);
+
           const visible =
             LAYERS[road.layerId].visible &&
             isRoadDatasetVisible(road) &&
@@ -18950,6 +18986,8 @@
         group.roads.forEach(function(road) {
           if (!road) return;
 
+          syncRoadDerivedDisplayState(road);
+
           const stack = getRoadLayerStack(road.styleKey);
           const lines = getRoadVisualLines(road);
           const roadIndex = group.roads.indexOf(road);
@@ -19829,16 +19867,24 @@
         if (!group) return;
 
         group.roads.forEach(function(groupRoad) {
-          groupRoad.statusKey = getRoadStatusKey(groupRoad.properties, group.layerId);
-          groupRoad.styleKey = getStyleKey(groupRoad.properties, group.layerId);
-          const style = ROAD_STYLES[groupRoad.styleKey];
-          if (style) groupRoad.color = style.color;
+          syncRoadDerivedDisplayState(groupRoad);
           groupRoad._visualTier = null;
           applyRoadNormalVisualStyle(groupRoad);
         });
 
         if (group.layerId === "rural") {
+          group.roads.forEach(function(groupRoad) {
+            const props = groupRoad.properties || {};
+            const statusLabel = roadStatusLabel(groupRoad.statusKey);
+            setPropertyValue(
+              props,
+              ["기타","Opened","Opend","개설여부"],
+              "기타",
+              statusLabel
+            );
+          });
           syncRuralGeometryTotal(group);
+          refreshRoadGroupJoinLines(group);
         }
 
         applyRoadVisibility();
@@ -25047,6 +25093,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
       }
 
       function getRoadStatusKey(properties, layerId) {
+        properties = properties || {};
+
         if (layerId === "city") {
           const status = String(properties["개설여부"] || "").trim();
           if (status.includes("미개설")) return "UNOPENED";
@@ -25054,17 +25102,33 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return "NORMAL";
         }
 
-        // 경주시 농어촌도로는 '기타' 필드의 개설/미개설 값을 우선 사용.
-        // 기존 데이터 호환을 위해 기타 값이 없을 때만 Opened/개설여부를 보조로 사용.
-        const status = String(
-          properties["기타"] ||
-          properties.Opened ||
-          properties["개설여부"] ||
-          ""
-        ).trim();
-        if (status.includes("미개설")) return "UNOPENED";
-        if (status.includes("미확장")) return "UNOPENED";
-        if (status.includes("계획")) return "PLAN";
+        // 경주시 농어촌도로는 저장되어 있는 '기타' 문자열이 아니라
+        // 구분 + 차선 + 도로폭을 기준으로 매번 자동 판정함.
+        // 이 방식으로 속성 수정/분할/병합/추가 뒤에도 화면 선형 상태가 즉시 일치함.
+        const gubun =
+          properties["구분"] ||
+          properties.GUBUN ||
+          properties.gubun ||
+          "";
+
+        const lane =
+          properties["차선"] ??
+          properties["차선현황"] ??
+          properties.lane ??
+          properties.LANE ??
+          "";
+
+        const width =
+          properties["도로폭"] ??
+          properties["폭원"] ??
+          properties.width ??
+          properties.WIDTH ??
+          "";
+
+        const autoStatus = classifyRuralRoadStatus(gubun, lane, width);
+
+        if (autoStatus === "미개설") return "UNOPENED";
+        if (autoStatus === "계획구간") return "PLAN";
         return "NORMAL";
       }
 
