@@ -9513,6 +9513,27 @@
     }
   }
 
+
+  /* ===== 변경 도로구간 내보내기 버튼 ===== */
+  #roadMenuRoadPage .road-dataset-actions.road-dataset-actions-changed {
+    grid-template-columns: minmax(0, 1fr) 72px 58px;
+  }
+
+  #roadMenuRoadPage #changedRoadDatasetExport {
+    color: #0a66c2;
+    background: #eef6ff;
+  }
+
+  #roadMenuRoadPage #changedRoadDatasetExport:active {
+    background: #dfefff;
+  }
+
+  @media (max-width:700px) {
+    #roadMenuRoadPage .road-dataset-actions.road-dataset-actions-changed {
+      grid-template-columns: minmax(0, 1fr) 76px 62px;
+    }
+  }
+
 </style>
 
 </head>
@@ -17711,6 +17732,78 @@
         updateRoadDatasetManagerStatus();
       }
 
+      function buildCurrentChangedRoadGeoJSON() {
+        const features = [];
+
+        groups.forEach(function(group) {
+          if (!group || group.layerId !== "rural") return;
+
+          group.roads.forEach(function(road, index) {
+            const path =
+              (group.paths && group.paths[index]) ||
+              road.pathFine ||
+              [];
+
+            if (!path || path.length < 2) return;
+
+            features.push({
+              type: "Feature",
+              properties: Object.assign({}, road.properties || {}),
+              geometry: {
+                type: "LineString",
+                coordinates: path.map(function(point) {
+                  return [
+                    Number(point.getLng().toFixed(8)),
+                    Number(point.getLat().toFixed(8))
+                  ];
+                })
+              }
+            });
+          });
+        });
+
+        return {
+          type: "FeatureCollection",
+          features: features
+        };
+      }
+
+      function exportChangedRoadDatasetGeoJSON() {
+        const geojson = buildCurrentChangedRoadGeoJSON();
+
+        if (!geojson.features.length) {
+          alert("내보낼 변경 도로구간이 없습니다.");
+          return;
+        }
+
+        const blob = new Blob(
+          [JSON.stringify(geojson, null, 2)],
+          { type: "application/geo+json;charset=utf-8" }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const now = new Date();
+        const stamp =
+          String(now.getFullYear()) +
+          String(now.getMonth() + 1).padStart(2, "0") +
+          String(now.getDate()).padStart(2, "0") + "_" +
+          String(now.getHours()).padStart(2, "0") +
+          String(now.getMinutes()).padStart(2, "0");
+
+        a.href = url;
+        a.download = "gyeongju_changed_roads_" + stamp + ".geojson";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        setTimeout(function() {
+          URL.revokeObjectURL(url);
+        }, 500);
+      }
+
+      window.exportChangedRoadDatasetGeoJSON = exportChangedRoadDatasetGeoJSON;
+
       function installRoadDatasetManager() {
         const roadPage = document.getElementById("roadMenuRoadPage");
         if (!roadPage || document.getElementById("roadDatasetManager")) return;
@@ -17770,10 +17863,11 @@
               '<span class="road-compact-chevron" aria-hidden="true">›</span>' +
             '</div>' +
             '<div class="road-compact-body" data-road-compact-body="changed" hidden>' +
-              '<div class="road-dataset-actions">' +
+              '<div class="road-dataset-actions road-dataset-actions-changed">' +
                 '<label class="road-dataset-file-btn">파일 불러오기' +
                   '<input id="changedRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
                 '</label>' +
+                '<button id="changedRoadDatasetExport" type="button">내보내기</button>' +
                 '<button id="changedRoadDatasetSave" type="button">저장</button>' +
               '</div>' +
             '</div>' +
@@ -17792,6 +17886,7 @@
         const changedFile = document.getElementById("changedRoadDatasetFile");
         const baseSave = document.getElementById("baseRoadDatasetSave");
         const changedSave = document.getElementById("changedRoadDatasetSave");
+        const changedExport = document.getElementById("changedRoadDatasetExport");
         const tokenInput = document.getElementById("roadGithubToken");
         const tokenRemember = document.getElementById("roadGithubTokenRemember");
         const tokenTest = document.getElementById("roadGithubTest");
@@ -17956,6 +18051,12 @@
             this.value = "";
           }
         });
+
+        if (changedExport) {
+          changedExport.addEventListener("click", function() {
+            exportChangedRoadDatasetGeoJSON();
+          });
+        }
 
         baseSave.addEventListener("click", async function() {
           if (!pendingBaseRoadGeoJSON) {
