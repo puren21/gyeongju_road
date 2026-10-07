@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>경주시 도로지도</title>
+  <title>경주시 농어촌도로 지도</title>
 
   <style>
     * {
@@ -7799,7 +7799,7 @@
         },
 
         rural: {
-          file: "roads.geojson?v=gyeongju-20261007",
+          file: "roads.geojson",
           visible: true,
           shapes: [],
           labels: []
@@ -7808,18 +7808,18 @@
 
       const BOUNDARY_LAYERS = {
         cityBoundary: {
-          files: [],
+          files: ["City Boundary.geojson"],
           visible: false,
-          maxScale: 0,
-          strokeColor: "#000000",
-          strokeWeight: 0,
-          strokeOpacity: 0,
+          maxScale: Infinity,
+          strokeColor: "#3F4852",
+          strokeWeight: 2,
+          strokeOpacity: 0.9,
           strokeStyle: "solid",
-          zIndex: 0,
+          zIndex: 3,
           shapes: []
         },
         townshipBoundary: {
-          files: ["township_overview.geojson"],
+          files: ["Township Boundary.geojson"],
           overviewShapes: [],
           detailLoaded: false,
           detailLoadingPromise: null,
@@ -7835,7 +7835,7 @@
           shapes: []
         },
         riBoundary: {
-          files: ["ri_boundary.geojson", "Ri Boundary.geojson", "Ri Boundary(1).geojson"],
+          files: ["Ri Boundary.geojson"],
           visible: false,
           loaded: false,
           loadingPromise: null,
@@ -13178,7 +13178,7 @@
         if (layer.detailLoaded) return;
         if (layer.detailLoadingPromise) return layer.detailLoadingPromise;
         layer.detailLoadingPromise = (async function() {
-          const loaded = await fetchFirstAvailableGeoJSON(["township_detail_lines.geojson"]);
+          const loaded = await fetchFirstAvailableGeoJSON(["Township Boundary.geojson"]);
           const shapes = [];
           loaded.data.features.forEach(function(feature) {
             addTownshipBoundaryLines(feature, shapes);
