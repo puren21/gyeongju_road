@@ -9098,6 +9098,62 @@
     background: #34c759 !important;
   }
 
+
+  /* ===== 메인 지도 로드뷰 위치 아이콘 + 레이더 ===== */
+  .main-roadview-radar {
+    position: relative;
+    width: 86px;
+    height: 86px;
+    pointer-events: none;
+  }
+
+  .main-roadview-radar-cone {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 76px;
+    height: 38px;
+    border-radius: 76px 76px 0 0;
+    background: rgba(37,143,255,.28);
+    border: 1px solid rgba(37,143,255,.38);
+    box-sizing: border-box;
+    transform-origin: 50% 100%;
+    transform: translate(-50%, -100%) rotate(0deg);
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.16));
+  }
+
+  .main-roadview-radar-icon {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: #258fff;
+    box-shadow: 0 2px 7px rgba(0,0,0,.38);
+    transform: translate(-50%, -50%);
+  }
+
+  .main-roadview-radar-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .main-roadview-radar-icon path {
+    fill: #fff;
+    stroke: none;
+  }
+
+  .main-roadview-radar-icon circle {
+    fill: #258fff;
+    stroke: #fff;
+    stroke-width: 1.8;
+  }
+
 </style>
 
 </head>
@@ -12813,6 +12869,9 @@
       let roadviewDirectionOverlay = null;
       let roadviewDirectionCone = null;
       let roadviewPopupWindow = null;
+      let roadviewMainOverlay = null;
+      let roadviewMainCone = null;
+      let roadviewMainIcon = null;
 
       const normalBtn = document.getElementById("normalBtn");
       const skyBtn = document.getElementById("skyBtn");
@@ -24054,6 +24113,109 @@
         }
       };
 
+      function ensureMainRoadviewRadar() {
+        if (roadviewMainOverlay) return roadviewMainOverlay;
+
+        const wrap = document.createElement("div");
+        wrap.className = "main-roadview-radar";
+        wrap.innerHTML =
+          '<div class="main-roadview-radar-cone"></div>' +
+          '<div class="main-roadview-radar-icon" title="로드뷰 위치" aria-label="로드뷰 위치">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+              '<path d="M7.2 7.5 8.6 5h6.8l1.4 2.5H19a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2h2.2Z"/>' +
+              '<circle cx="12" cy="13.2" r="3.2"/>' +
+            '</svg>' +
+          '</div>';
+
+        roadviewMainCone = wrap.querySelector(".main-roadview-radar-cone");
+        roadviewMainIcon = wrap.querySelector(".main-roadview-radar-icon");
+
+        roadviewMainOverlay = new kakao.maps.CustomOverlay({
+          map: null,
+          position: map.getCenter(),
+          content: wrap,
+          xAnchor: 0.5,
+          yAnchor: 0.5,
+          zIndex: 130
+        });
+
+        return roadviewMainOverlay;
+      }
+
+      function updateMainRoadviewRadar(position, pan) {
+        if (!position) return;
+
+        ensureMainRoadviewRadar();
+
+        roadviewMainOverlay.setPosition(position);
+        roadviewMainOverlay.setMap(roadviewMode ? map : null);
+
+        const angle = Number.isFinite(Number(pan)) ? Number(pan) : 0;
+        if (roadviewMainCone) {
+          roadviewMainCone.style.transform =
+            "translate(-50%, -100%) rotate(" + angle + "deg)";
+        }
+      }
+
+      window.updateMainRoadviewPosition = function(lat, lng, pan) {
+        if (!roadviewMode) return;
+
+        const latitude = Number(lat);
+        const longitude = Number(lng);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+        updateMainRoadviewRadar(
+          new kakao.maps.LatLng(latitude, longitude),
+          pan
+        );
+      };
+
+      window.updateMainRoadviewPan = function(pan) {
+        if (!roadviewMode || !roadviewMainCone) return;
+        const angle = Number.isFinite(Number(pan)) ? Number(pan) : 0;
+        roadviewMainCone.style.transform =
+          "translate(-50%, -100%) rotate(" + angle + "deg)";
+      };
+
+      function hideMainRoadviewRadar() {
+        if (roadviewMainOverlay) {
+          roadviewMainOverlay.setMap(null);
+        }
+      }
+
+      function findNearestRoadviewPano(position, callback) {
+        if (!roadviewClient || !position) {
+          callback(null);
+          return;
+        }
+
+        const radii = [100, 300, 1000];
+        let index = 0;
+
+        function tryNext() {
+          if (index >= radii.length) {
+            callback(null);
+            return;
+          }
+
+          const radius = radii[index++];
+          roadviewClient.getNearestPanoId(
+            position,
+            radius,
+            function(panoId) {
+              if (panoId !== null && panoId !== undefined) {
+                callback(panoId);
+              } else {
+                tryNext();
+              }
+            }
+          );
+        }
+
+        tryNext();
+      }
+
+
       function ensureRoadviewPopup() {
         if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
           try {
@@ -24238,6 +24400,34 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
   var pending = null;
   var ready = false;
 
+  function syncParentPosition() {
+    if (!roadview || !window.opener || window.opener.closed) return;
+    try {
+      var position = roadview.getPosition();
+      var viewpoint = roadview.getViewpoint ? roadview.getViewpoint() : null;
+      var pan = viewpoint && isFinite(Number(viewpoint.pan)) ? Number(viewpoint.pan) : 0;
+
+      if (position && typeof window.opener.updateMainRoadviewPosition === "function") {
+        window.opener.updateMainRoadviewPosition(
+          position.getLat(),
+          position.getLng(),
+          pan
+        );
+      }
+    } catch (e) {}
+  }
+
+  function syncParentPan() {
+    if (!roadview || !window.opener || window.opener.closed) return;
+    try {
+      var viewpoint = roadview.getViewpoint ? roadview.getViewpoint() : null;
+      var pan = viewpoint && isFinite(Number(viewpoint.pan)) ? Number(viewpoint.pan) : 0;
+      if (typeof window.opener.updateMainRoadviewPan === "function") {
+        window.opener.updateMainRoadviewPan(pan);
+      }
+    } catch (e) {}
+  }
+
   window.setRoadviewPano = function(panoId, lat, lng) {
     pending = { panoId:panoId, lat:lat, lng:lng };
     if (!ready || !roadview) return;
@@ -24255,6 +24445,11 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
   script.onload = function() {
     kakao.maps.load(function() {
       roadview = new kakao.maps.Roadview(document.getElementById("roadview"));
+
+      kakao.maps.event.addListener(roadview, "position_changed", syncParentPosition);
+      kakao.maps.event.addListener(roadview, "pano_changed", syncParentPosition);
+      kakao.maps.event.addListener(roadview, "viewpoint_changed", syncParentPan);
+
       ready = true;
       document.getElementById("loading").textContent = "지도에서 위치를 선택하세요.";
       if (pending) window.setRoadviewPano(pending.panoId, pending.lat, pending.lng);
@@ -24296,10 +24491,17 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
         roadviewBtn.classList.add("active");
 
         // 로드뷰 버튼을 누른 사용자 동작 안에서 팝업을 먼저 열어 팝업차단 가능성을 줄임.
-        ensureRoadviewPopup();
+        const popup = ensureRoadviewPopup();
 
         infoWindow.close();
         resetSelection();
+
+        // 실행 즉시 현재 지도 중심에서 가장 가까운 로드뷰를 찾아 팝업에 표시.
+        if (popup) {
+          const center = map.getCenter();
+          updateMainRoadviewRadar(center, 0);
+          openRoadview(center);
+        }
       }
 
       function stopRoadview() {
@@ -24309,6 +24511,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
         if (roadviewOverlay) {
           roadviewOverlay.setMap(null);
         }
+
+        hideMainRoadviewRadar();
 
         if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
           try { roadviewPopupWindow.close(); } catch (e) {}
@@ -24327,11 +24531,14 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return;
         }
 
-        roadviewClient.getNearestPanoId(
+        // 사용자가 선택한 위치에 먼저 아이콘/레이더를 보여주고,
+        // 팝업에서 실제 파노라마 위치를 받으면 정확한 위치로 다시 이동함.
+        updateMainRoadviewRadar(position, 0);
+
+        findNearestRoadviewPano(
           position,
-          100,
           function (panoId) {
-            if (panoId === null) {
+            if (panoId === null || panoId === undefined) {
               return;
             }
 
