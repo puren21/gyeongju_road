@@ -7887,7 +7887,7 @@
 
       function townshipName(feature) {
         const p = (feature && feature.properties) || {};
-        return safe(p.NAME || p.EMD_KOR_NM || p.ADM_NM || p.name || "읍면동");
+        return safe(p.NAME || p.EMD_NM || p.EMD_KOR_NM || p.ADM_NM || p.name || "읍면동");
       }
 
       function extendBoundsWithPath(bounds, path) {
