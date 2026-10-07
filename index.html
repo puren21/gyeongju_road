@@ -8350,27 +8350,31 @@
     /* ===== 로드뷰 우상단 모서리 크기조절 ===== */
     #roadviewResizeHandle.roadview-resize-handle {
       position: absolute;
-      top: -7px;
-      right: -7px;
-      width: 26px;
-      height: 26px;
-      z-index: 45;
-      cursor: nesw-resize;
+      top: -8px;
+      left: -8px;
+      right: auto;
+      width: 34px;
+      height: 34px;
+      z-index: 80;
+      cursor: nwse-resize;
       touch-action: none;
       user-select: none;
+      pointer-events: auto;
+      background: transparent;
     }
 
     #roadviewResizeHandle.roadview-resize-handle::before {
       content: "";
       position: absolute;
-      top: 6px;
-      right: 6px;
-      width: 12px;
-      height: 12px;
-      border-top: 3px solid rgba(37,136,246,.92);
-      border-right: 3px solid rgba(37,136,246,.92);
-      border-radius: 1px;
+      top: 7px;
+      left: 7px;
+      width: 15px;
+      height: 15px;
+      border-top: 3px solid rgba(37,136,246,.96);
+      border-left: 3px solid rgba(37,136,246,.96);
+      border-radius: 2px 0 0 0;
       box-sizing: border-box;
+      pointer-events: none;
     }
 
     #roadviewPanel.fullscreen #roadviewResizeHandle {
@@ -8378,7 +8382,7 @@
     }
 
     body.roadview-resizing {
-      cursor: nesw-resize !important;
+      cursor: nwse-resize !important;
       user-select: none !important;
     }
 
@@ -11419,13 +11423,14 @@
         let startY = 0;
         let startWidth = 0;
         let startHeight = 0;
-        let fixedLeft = 0;
-        let fixedBottom = 0;
+        let fixedRight = 15;
+        let fixedBottom = 15;
+        let relayoutFrame = null;
 
         function clampSize(width, height) {
           const minWidth = Math.min(320, Math.max(240, window.innerWidth - 30));
           const minHeight = Math.min(240, Math.max(180, window.innerHeight - 30));
-          const maxWidth = Math.max(minWidth, window.innerWidth - fixedLeft - 8);
+          const maxWidth = Math.max(minWidth, window.innerWidth - fixedRight - 8);
           const maxHeight = Math.max(minHeight, window.innerHeight - fixedBottom - 8);
 
           return {
@@ -11435,39 +11440,49 @@
         }
 
         function relayoutRoadviewAfterResize() {
-          if (roadview) roadview.relayout();
+          if (relayoutFrame) cancelAnimationFrame(relayoutFrame);
+          relayoutFrame = requestAnimationFrame(function() {
+            relayoutFrame = null;
 
-          if (roadviewMiniMap) {
-            roadviewMiniMap.relayout();
-            const currentPosition = roadview && roadview.getPosition
-              ? roadview.getPosition()
-              : null;
-            if (currentPosition) {
-              roadviewMiniMap.setCenter(currentPosition);
+            if (roadview) roadview.relayout();
+
+            if (roadviewMiniMap) {
+              roadviewMiniMap.relayout();
+              const currentPosition =
+                roadview && roadview.getPosition
+                  ? roadview.getPosition()
+                  : null;
+
+              if (currentPosition) {
+                roadviewMiniMap.setCenter(currentPosition);
+              }
+
+              roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
+              roadviewMiniMap.setLevel(1, { animate: false });
             }
-            roadviewMiniMap.setLevel(1, { animate: false });
-          }
+          });
         }
 
-        roadviewResizeHandle.addEventListener("pointerdown", function(event) {
+        function beginResize(event) {
           if (roadviewPanel.classList.contains("fullscreen")) return;
           if (event.button !== undefined && event.button !== 0) return;
 
           const rect = roadviewPanel.getBoundingClientRect();
+
           resizing = true;
           pointerId = event.pointerId;
           startX = event.clientX;
           startY = event.clientY;
           startWidth = rect.width;
           startHeight = rect.height;
-          fixedLeft = rect.left;
+          fixedRight = Math.max(0, window.innerWidth - rect.right);
           fixedBottom = Math.max(0, window.innerHeight - rect.bottom);
 
-          // 우상단 모서리가 실제로 움직이도록 왼쪽/하단을 고정 기준으로 전환.
-          roadviewPanel.style.left = fixedLeft + "px";
-          roadviewPanel.style.right = "auto";
-          roadviewPanel.style.bottom = fixedBottom + "px";
+          // 좌상단을 움직이고 우하단 위치는 고정함.
+          roadviewPanel.style.left = "auto";
           roadviewPanel.style.top = "auto";
+          roadviewPanel.style.right = fixedRight + "px";
+          roadviewPanel.style.bottom = fixedBottom + "px";
           roadviewPanel.style.width = startWidth + "px";
           roadviewPanel.style.height = startHeight + "px";
 
@@ -11479,13 +11494,16 @@
 
           event.preventDefault();
           event.stopPropagation();
-        });
+        }
 
-        roadviewResizeHandle.addEventListener("pointermove", function(event) {
-          if (!resizing || event.pointerId !== pointerId) return;
+        function moveResize(event) {
+          if (!resizing) return;
+          if (pointerId !== null && event.pointerId !== undefined && event.pointerId !== pointerId) return;
 
+          // 좌상단 드래그:
+          // 왼쪽으로 이동하면 폭 증가, 위로 이동하면 높이 증가.
           const next = clampSize(
-            startWidth + (event.clientX - startX),
+            startWidth - (event.clientX - startX),
             startHeight - (event.clientY - startY)
           );
 
@@ -11496,11 +11514,16 @@
 
           event.preventDefault();
           event.stopPropagation();
-        });
+        }
 
-        function finishRoadviewResize(event) {
+        function finishResize(event) {
           if (!resizing) return;
-          if (event && pointerId !== null && event.pointerId !== pointerId) return;
+          if (
+            event &&
+            pointerId !== null &&
+            event.pointerId !== undefined &&
+            event.pointerId !== pointerId
+          ) return;
 
           resizing = false;
           document.body.classList.remove("roadview-resizing");
@@ -11513,8 +11536,10 @@
           relayoutRoadviewAfterResize();
         }
 
-        roadviewResizeHandle.addEventListener("pointerup", finishRoadviewResize);
-        roadviewResizeHandle.addEventListener("pointercancel", finishRoadviewResize);
+        roadviewResizeHandle.addEventListener("pointerdown", beginResize);
+        window.addEventListener("pointermove", moveResize, { passive: false });
+        window.addEventListener("pointerup", finishResize);
+        window.addEventListener("pointercancel", finishResize);
       }
 
       installRoadviewResize();
@@ -21334,8 +21359,8 @@
             }
           );
 
-          // 로드뷰 미니맵은 항공영상으로 시작하고 가능한 최대 확대(level 1)로 고정함.
-          roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.SKYVIEW);
+          // 로드뷰 미니맵은 하이브리드로 시작하고 가능한 최대 확대(level 1)로 고정함.
+          roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
           try {
             if (typeof roadviewMiniMap.setMinLevel === "function") {
               roadviewMiniMap.setMinLevel(1);
@@ -21452,7 +21477,7 @@
               if (roadviewMiniMap) {
                 roadviewMiniMap.relayout();
                 roadviewMiniMap.setCenter(position);
-                roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.SKYVIEW);
+                roadviewMiniMap.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
                 roadviewMiniMap.setLevel(1, { animate: false });
               }
               if (roadviewDirectionOverlay) {
