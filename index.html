@@ -20497,6 +20497,16 @@
         });
         clearRoadGeometryJoinMarkers(state);
         clearRoadGeometryMergeHitLines(state);
+        clearRoadGeometryAddPreview(state);
+
+        if (state.addMapClickHandler) {
+          try { kakao.maps.event.removeListener(map, "click", state.addMapClickHandler); } catch (e) {}
+          state.addMapClickHandler = null;
+        }
+        if (state.addMapRightClickHandler) {
+          try { kakao.maps.event.removeListener(map, "rightclick", state.addMapRightClickHandler); } catch (e) {}
+          state.addMapRightClickHandler = null;
+        }
 
         if (state.previewLine) state.previewLine.setMap(null);
         if (state.previewHitLine) state.previewHitLine.setMap(null);
@@ -20505,6 +20515,8 @@
         if (state.splitMarker) state.splitMarker.setMap(null);
         clearTimeout(state.hoverPlusHideTimer);
         if (state.hoverPlusOverlay) state.hoverPlusOverlay.setMap(null);
+
+        closeRoadMergePropertyChoice();
 
         const toolbar = document.getElementById("geometryEditToolbar");
         if (toolbar) toolbar.remove();
@@ -21667,6 +21679,271 @@
       }
 
 
+      function clearRoadGeometryAddPreview(state) {
+        if (!state) return;
+
+        if (state.addPreviewLine) {
+          try { state.addPreviewLine.setMap(null); } catch (e) {}
+        }
+        state.addPreviewLine = null;
+
+        (state.addPointOverlays || []).forEach(function(overlay) {
+          try { if (overlay) overlay.setMap(null); } catch (e) {}
+        });
+        state.addPointOverlays = [];
+      }
+
+      function renderRoadGeometryAddPreview(state) {
+        if (!state) return;
+
+        clearRoadGeometryAddPreview(state);
+
+        const path = state.addPath || [];
+        if (path.length >= 2) {
+          state.addPreviewLine = new kakao.maps.Polyline({
+            map: map,
+            path: path,
+            strokeWeight: 4,
+            strokeColor: "#34c759",
+            strokeOpacity: .96,
+            strokeStyle: "solid",
+            zIndex: 232
+          });
+        }
+
+        path.forEach(function(position, index) {
+          const el = document.createElement("div");
+          el.className = "geometry-add-point";
+          el.textContent = String(index + 1);
+
+          state.addPointOverlays.push(new kakao.maps.CustomOverlay({
+            map: map,
+            position: position,
+            content: el,
+            xAnchor: .5,
+            yAnchor: .5,
+            zIndex: 233
+          }));
+        });
+
+        const saveButton = document.getElementById("saveRoadGeometryBtn");
+        if (saveButton && state.mode === "add") {
+          saveButton.disabled = path.length < 2;
+        }
+      }
+
+      function snapAddedRoadPoint(state, position) {
+        if (!state || !position || !state.group) return position;
+
+        let best = null;
+        let bestDistance = ROAD_ENDPOINT_SNAP_METERS;
+
+        state.group.roads.forEach(function(itemRoad, roadIndex) {
+          if (!itemRoad) return;
+          const path =
+            (state.group.paths && state.group.paths[roadIndex]) ||
+            itemRoad.pathFine ||
+            [];
+          if (!path || path.length < 2) return;
+
+          [path[0], path[path.length - 1]].forEach(function(endpoint) {
+            const d = roadEditDistanceMeters(position, endpoint);
+            if (d <= bestDistance) {
+              bestDistance = d;
+              best = endpoint;
+            }
+          });
+        });
+
+        return best
+          ? new kakao.maps.LatLng(best.getLat(), best.getLng())
+          : new kakao.maps.LatLng(position.getLat(), position.getLng());
+      }
+
+      function beginRoadGeometryAddMode(state) {
+        if (!state) return;
+
+        state.addPath = [];
+        clearRoadGeometryAddPreview(state);
+
+        if (!state.addMapClickHandler) {
+          state.addMapClickHandler = function(mouseEvent) {
+            const activeState = roadGeometryEditState;
+            if (!activeState || activeState !== state || activeState.mode !== "add") return;
+            if (!mouseEvent || !mouseEvent.latLng) return;
+
+            kakao.maps.event.preventMap();
+
+            const snapped = snapAddedRoadPoint(activeState, mouseEvent.latLng);
+            activeState.addPath.push(snapped);
+            renderRoadGeometryAddPreview(activeState);
+            setRoadEditDirty(true);
+
+            const help = document.getElementById("geometryEditHelp");
+            if (help) {
+              help.textContent =
+                activeState.addPath.length < 2
+                  ? "두 번째 점을 클릭하세요."
+                  : "계속 클릭해 선형을 추가하거나 저장하세요. 우클릭은 마지막 점 취소입니다.";
+            }
+          };
+          kakao.maps.event.addListener(map, "click", state.addMapClickHandler);
+        }
+
+        if (!state.addMapRightClickHandler) {
+          state.addMapRightClickHandler = function(mouseEvent) {
+            const activeState = roadGeometryEditState;
+            if (!activeState || activeState !== state || activeState.mode !== "add") return;
+
+            if (mouseEvent && mouseEvent.domEvent) {
+              mouseEvent.domEvent.preventDefault();
+              mouseEvent.domEvent.stopPropagation();
+            }
+
+            if (activeState.addPath.length) {
+              activeState.addPath.pop();
+              renderRoadGeometryAddPreview(activeState);
+            }
+          };
+          kakao.maps.event.addListener(map, "rightclick", state.addMapRightClickHandler);
+        }
+
+        renderRoadGeometryAddPreview(state);
+      }
+
+      function removeRoadFromGroup(group, road) {
+        if (!group || !road) return -1;
+        const index = group.roads.indexOf(road);
+        if (index < 0) return -1;
+
+        removeRoadObjectFromMap(road);
+        group.roads.splice(index, 1);
+        group.paths.splice(index, 1);
+        group.propertiesList.splice(index, 1);
+        return index;
+      }
+
+      async function deleteCurrentRoadGeometry() {
+        const state = roadGeometryEditState;
+        if (!state || !state.group || !state.road) return;
+
+        if (state.group.layerId !== "rural") {
+          alert("라인 삭제는 농어촌도로에서만 사용할 수 있습니다.");
+          return;
+        }
+
+        if (state.group.roads.length <= 1) {
+          alert("노선의 마지막 라인은 삭제할 수 없습니다.");
+          return;
+        }
+
+        const ok = confirm("현재 선택한 라인을 삭제하시겠습니까?\\n저장하면 이 구간이 노선에서 제거됩니다.");
+        if (!ok) return;
+
+        const group = state.group;
+        const deletedIndex = group.roads.indexOf(state.road);
+        if (deletedIndex < 0) return;
+
+        try {
+          roadEditSaving = true;
+
+          clearRoadGeometryAddPreview(state);
+          clearRoadGeometryJoinMarkers(state);
+          clearRoadGeometryMergeHitLines(state);
+
+          removeRoadFromGroup(group, state.road);
+          syncRuralGeometryTotal(group);
+          recalcGroupBounds(group);
+          refreshRoadGroupJoinLines(group);
+
+          const payload = {
+            version: 3,
+            layerId: group.layerId,
+            number: String(group.number || ""),
+            gubun: getRoadGroupTypeLabel(group),
+            segmentModel: serializeRoadGroupSegments(group),
+            geometries: {},
+            roads: {}
+          };
+
+          await saveOnlineRoadEdits(group, payload);
+
+          const nextIndex = Math.max(0, Math.min(deletedIndex, group.roads.length - 1));
+          const nextRoad = group.roads[nextIndex] || null;
+
+          selectedRoadSegmentIndex = nextIndex;
+          selectedRoadObject = nextRoad;
+          if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
+            selectedRoadPopupState.road = nextRoad;
+          }
+
+          clearRoadGeometryEdit(true);
+
+          setRoadEditDirty(true);
+          applyRoadVisibility();
+          refreshEditedRoadGroup(group.key);
+          updateLabels();
+
+          if (nextRoad) {
+            setSelectedRoadSegment(
+              group,
+              nextRoad,
+              getRoadMidpointPosition(nextRoad) ||
+                (selectedRoadPopupState && selectedRoadPopupState.anchorPosition)
+            );
+            restoreInlineRoadEditPopup(group.key, nextRoad);
+          }
+        } catch (error) {
+          console.error(error);
+          alert("라인 삭제 저장에 실패했습니다.\\n\\n" + error.message);
+        } finally {
+          roadEditSaving = false;
+        }
+      }
+
+      window.deleteCurrentRoadGeometry = deleteCurrentRoadGeometry;
+
+      function closeRoadMergePropertyChoice() {
+        const existing = document.getElementById("roadMergePropertyChoice");
+        if (existing) existing.remove();
+      }
+
+      function showRoadMergePropertyChoice(state, targetRoad, targetIndex) {
+        if (!state || !targetRoad) return;
+
+        closeRoadMergePropertyChoice();
+
+        const panel = document.createElement("div");
+        panel.id = "roadMergePropertyChoice";
+        panel.className = "road-merge-property-choice";
+        panel.innerHTML =
+          '<div class="road-merge-property-title">병합 후 어떤 라인의 속성을 사용할까요?</div>' +
+          '<div class="road-merge-property-note">선형만 하나로 합치고, 선택한 라인의 속성값을 기준으로 저장합니다.</div>' +
+          '<div class="road-merge-property-actions">' +
+            '<button type="button" data-source="first">첫 번째 라인 속성</button>' +
+            '<button type="button" data-source="second">두 번째 라인 속성</button>' +
+            '<button type="button" class="cancel">취소</button>' +
+          '</div>';
+
+        document.body.appendChild(panel);
+
+        panel.querySelector('[data-source="first"]').onclick = function() {
+          closeRoadMergePropertyChoice();
+          state.mergePropertySource = "first";
+          applyRoadGeometryMergeTarget(state, targetRoad, targetIndex);
+        };
+
+        panel.querySelector('[data-source="second"]').onclick = function() {
+          closeRoadMergePropertyChoice();
+          state.mergePropertySource = "second";
+          applyRoadGeometryMergeTarget(state, targetRoad, targetIndex);
+        };
+
+        panel.querySelector(".cancel").onclick = function() {
+          closeRoadMergePropertyChoice();
+        };
+      }
+
       function clearRoadGeometryMergeHitLines(state) {
         if (!state) return;
         (state.mergeHitLines || []).forEach(function(line) {
@@ -21770,6 +22047,11 @@
 
       function selectRoadGeometryMergeTarget(state, targetRoad, targetIndex) {
         if (!state || !targetRoad || targetRoad === state.road) return;
+        showRoadMergePropertyChoice(state, targetRoad, targetIndex);
+      }
+
+      function applyRoadGeometryMergeTarget(state, targetRoad, targetIndex) {
+        if (!state || !targetRoad || targetRoad === state.road) return;
 
         const targetPath =
           (state.group.paths && state.group.paths[targetIndex]) ||
@@ -21789,8 +22071,8 @@
 
         if (mergedResult.error === "gap") {
           alert(
-            "두 라인의 끝점이 너무 멀리 떨어져 있어 병합하지 않았습니다.\n\n" +
-            "현재 끝점 간 거리: " + mergedResult.distance.toFixed(1) + " m\n" +
+            "두 라인의 끝점이 너무 멀리 떨어져 있어 병합하지 않았습니다.\\n\\n" +
+            "현재 끝점 간 거리: " + mergedResult.distance.toFixed(1) + " m\\n" +
             "먼저 '라인 붙이기'로 끝점을 연결한 뒤 병합해 주세요."
           );
           return;
@@ -21811,7 +22093,10 @@
 
         const help = document.getElementById("geometryEditHelp");
         if (help) {
-          help.textContent = "두 라인을 하나로 병합했습니다. 저장하면 두 번째 라인은 제거됩니다.";
+          help.textContent =
+            state.mergePropertySource === "second"
+              ? "병합 완료 · 두 번째 라인의 속성값을 사용합니다. 저장하세요."
+              : "병합 완료 · 첫 번째 라인의 속성값을 사용합니다. 저장하세요.";
         }
       }
 
@@ -21872,6 +22157,7 @@
           if (mode === "split") nextMode = "split";
           if (mode === "join") nextMode = "join";
           if (mode === "merge") nextMode = "merge";
+          if (mode === "add") nextMode = "add";
         }
 
         state.mode = nextMode;
@@ -21880,15 +22166,24 @@
         const splitBtn = document.getElementById("geometrySplitModeBtn");
         const joinBtn = document.getElementById("geometryJoinModeBtn");
         const mergeBtn = document.getElementById("geometryMergeModeBtn");
+        const addBtn = document.getElementById("geometryAddModeBtn");
         const help = document.getElementById("geometryEditHelp");
+        const saveButton = document.getElementById("saveRoadGeometryBtn");
 
         if (vertexBtn) vertexBtn.classList.toggle("active", nextMode === "vertex");
         if (splitBtn) splitBtn.classList.toggle("active", nextMode === "split");
         if (joinBtn) joinBtn.classList.toggle("active", nextMode === "join");
         if (mergeBtn) mergeBtn.classList.toggle("active", nextMode === "merge");
+        if (addBtn) addBtn.classList.toggle("active", nextMode === "add");
 
+        closeRoadMergePropertyChoice();
         clearRoadGeometryJoinMarkers(state);
         clearRoadGeometryMergeHitLines(state);
+
+        if (nextMode !== "add") {
+          clearRoadGeometryAddPreview(state);
+          if (saveButton) saveButton.disabled = false;
+        }
 
         if (nextMode === "vertex") {
           clearRoadGeometrySplitPreview(state);
@@ -21925,15 +22220,27 @@
           return;
         }
 
-        // 병합: 현재 편집 중인 라인이 첫 번째 라인, 지도에서 같은 노선의 두 번째 라인을 선택.
-        state.mergeOriginalWorkingPath = cloneRoadEditPath(state.workingPath);
-        state.mergeTargetRoad = null;
-        state.mergeTargetRoadIndex = -1;
-        showRoadGeometryMergeTargets(state);
-        if (help) {
-          help.textContent = "현재 빨간 라인이 첫 번째 라인입니다. 끝점이 가까운 같은 노선의 두 번째 라인을 클릭하세요.";
+        if (nextMode === "merge") {
+          state.mergeOriginalWorkingPath = cloneRoadEditPath(state.workingPath);
+          state.mergeTargetRoad = null;
+          state.mergeTargetRoadIndex = -1;
+          state.mergePropertySource = "first";
+          showRoadGeometryMergeTargets(state);
+          if (help) {
+            help.textContent = "현재 빨간 라인이 첫 번째 라인입니다. 끝점이 가까운 같은 노선의 두 번째 라인을 클릭하세요.";
+          }
+          map.setCursor("pointer");
+          return;
         }
-        map.setCursor("pointer");
+
+        // 새 라인 추가
+        beginRoadGeometryAddMode(state);
+        if (state.previewLine) state.previewLine.setMap(null);
+        if (state.previewHitLine) state.previewHitLine.setMap(null);
+        if (help) {
+          help.textContent = "지도에서 새 라인의 첫 번째 점을 클릭하세요. 기존 끝점 1.5m 이내에서는 자동 스냅됩니다.";
+        }
+        map.setCursor("crosshair");
       }
 
       window.setRoadGeometryEditMode = setRoadGeometryEditMode;
@@ -22121,6 +22428,12 @@
           mergeTargetRoad: null,
           mergeTargetRoadIndex: -1,
           mergeOriginalWorkingPath: null,
+          mergePropertySource: "first",
+          addPath: [],
+          addPreviewLine: null,
+          addPointOverlays: [],
+          addMapClickHandler: null,
+          addMapRightClickHandler: null,
           hoverPlusOverlay: null,
           hoverPlusPosition: null,
           hoverPlusSegmentIndex: null,
@@ -22191,7 +22504,9 @@
           (group.layerId === "rural"
             ? '<button type="button" id="geometrySplitModeBtn" onclick="setRoadGeometryEditMode(\'split\')">라인 나누기</button>' +
               '<button type="button" id="geometryJoinModeBtn" onclick="setRoadGeometryEditMode(\'join\')">라인 붙이기</button>' +
-              '<button type="button" id="geometryMergeModeBtn" onclick="setRoadGeometryEditMode(\'merge\')">라인 병합</button>'
+              '<button type="button" id="geometryMergeModeBtn" onclick="setRoadGeometryEditMode(\'merge\')">라인 병합</button>' +
+              '<button type="button" id="geometryAddModeBtn" onclick="setRoadGeometryEditMode(\'add\')">라인 추가</button>' +
+              '<button type="button" id="geometryDeleteBtn" onclick="deleteCurrentRoadGeometry()">라인 삭제</button>'
             : '') +
           '<button type="button" onclick="cancelRoadGeometryEdit()">취소</button>' +
           '<button type="button" class="save" id="saveRoadGeometryBtn" onclick="saveRoadGeometryEdit({ keepEditing: true })">저장</button>';
@@ -22283,6 +22598,17 @@
             state.mergeTargetRoad &&
             state.mergeTargetRoadIndex >= 0;
 
+          const hasAdd =
+            state.group.layerId === "rural" &&
+            state.mode === "add" &&
+            Array.isArray(state.addPath) &&
+            state.addPath.length >= 2;
+
+          if (state.mode === "add" && !hasAdd) {
+            alert("새 라인은 최소 2개 이상의 점이 필요합니다.");
+            return false;
+          }
+
           let savedPrimaryPath = path.slice();
           let savedSecondaryPath = null;
 
@@ -22305,29 +22631,33 @@
           }
 
           if (hasMerge) {
-            const mergedProperties = mergeRoadPropertyValues(
-              road.properties || {},
-              state.mergeTargetRoad.properties || {}
-            );
+            const sourceProperties =
+              state.mergePropertySource === "second"
+                ? (state.mergeTargetRoad.properties || {})
+                : (road.properties || {});
 
-            // 같은 노선번호는 유지.
+            const mergedProperties = Object.assign({}, sourceProperties);
+
+            // 병합해도 노선번호는 현재 그룹의 노선번호로 유지.
             ["number", "NUMBER", "노선번호"].forEach(function(key) {
               if (key in mergedProperties) mergedProperties[key] = group.number;
             });
 
-            // 차선/도로폭 등 숫자 속성은 큰 값이 적용된 뒤 노선상태를 다시 자동판정.
+            // 사용자가 선택한 기준 라인의 차선/도로폭으로 노선상태를 다시 판정.
             const mergedGubun = String(
               mergedProperties.GUBUN ||
               mergedProperties["구분"] ||
               getRoadGroupTypeLabel(group)
             );
-            const mergedLane = mergedProperties["차선"];
-            const mergedWidth = mergedProperties["도로폭"];
             setPropertyValue(
               mergedProperties,
               ["기타","Opened","Opend","개설여부"],
               "기타",
-              classifyRuralRoadStatus(mergedGubun, mergedLane, mergedWidth)
+              classifyRuralRoadStatus(
+                mergedGubun,
+                mergedProperties["차선"],
+                mergedProperties["도로폭"]
+              )
             );
 
             road.properties = mergedProperties;
@@ -22419,6 +22749,47 @@
             );
           }
 
+          if (hasAdd) {
+            const addedPath = state.addPath.map(function(point) {
+              return new kakao.maps.LatLng(point.getLat(), point.getLng());
+            });
+
+            const addedProperties = Object.assign({}, road.properties || {});
+
+            ["number", "NUMBER", "노선번호"].forEach(function(key) {
+              if (key in addedProperties) addedProperties[key] = group.number;
+            });
+
+            setPropertyValue(
+              addedProperties,
+              ["연장"],
+              "연장",
+              formatRoadLengthKm(roadPathLengthKm(addedPath))
+            );
+
+            const addedStatusKey = getRoadStatusKey(addedProperties, group.layerId);
+            const addedRoad = drawRoad(
+              addedPath.slice(),
+              addedProperties,
+              group.layerId,
+              group.key,
+              getColor(addedProperties, group.layerId),
+              addedStatusKey
+            );
+
+            group.paths.push(addedPath.slice());
+            group.roads.push(addedRoad);
+            group.propertiesList.push(addedProperties);
+
+            selectedRoadSegmentIndex = group.roads.length - 1;
+            selectedRoadObject = addedRoad;
+            if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
+              selectedRoadPopupState.road = addedRoad;
+            }
+
+            refreshRoadGroupJoinLines(group);
+          }
+
           syncRuralGeometryTotal(group);
           recalcGroupBounds(group);
 
@@ -22465,7 +22836,7 @@
           payload.geometries[String(state.roadIndex)] =
             serializeRoadGeometryPath(savedPrimaryPath);
 
-          if (group.layerId === "rural" && (hasSplit || hasMerge || Array.isArray(payload.segmentModel))) {
+          if (group.layerId === "rural" && (hasSplit || hasMerge || hasAdd || Array.isArray(payload.segmentModel))) {
             payload.version = 3;
             payload.segmentModel = serializeRoadGroupSegments(group);
             payload.geometries = {};
@@ -22504,17 +22875,21 @@
 
           // 현재 열린 노선정보도 저장된 선형 기준으로 즉시 다시 표시한다.
           if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
-            selectedRoadSegmentIndex = state.roadIndex;
+            const popupRoad = hasAdd
+              ? (group.roads[selectedRoadSegmentIndex] || road)
+              : road;
+
+            if (!hasAdd) selectedRoadSegmentIndex = state.roadIndex;
             setSelectedRoadSegment(
               group,
-              road,
-              getRoadMidpointPosition(road) ||
+              popupRoad,
+              getRoadMidpointPosition(popupRoad) ||
                 selectedRoadPopupState.anchorPosition
             );
             setRoadGroupHighlight(group.key, true);
 
             if (keepEditing) {
-              restoreInlineRoadEditPopup(group.key, road);
+              restoreInlineRoadEditPopup(group.key, popupRoad);
             } else {
               const existingPopup = document.querySelector("body > .road-popup");
               if (existingPopup) existingPopup.remove();
@@ -23751,6 +24126,100 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
     color: #fff !important;
     border-color: #ff9500 !important;
     background: #ff9500 !important;
+  }
+
+
+  /* ===== 라인 추가 / 삭제 / 병합 속성 선택 ===== */
+  .geometry-edit-toolbar #geometryAddModeBtn {
+    color: #176b3a;
+    border-color: #9bcfaf;
+    background: #f2fbf5;
+  }
+
+  .geometry-edit-toolbar #geometryAddModeBtn.active {
+    color: #fff !important;
+    border-color: #34c759 !important;
+    background: #34c759 !important;
+  }
+
+  .geometry-edit-toolbar #geometryDeleteBtn {
+    color: #b42318;
+    border-color: #e1a6a0;
+    background: #fff4f2;
+  }
+
+  .geometry-add-point {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    background: #34c759;
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.35);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .road-merge-property-choice {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    z-index: 16050;
+    width: min(420px, calc(100vw - 24px));
+    padding: 18px;
+    box-sizing: border-box;
+    border: 1px solid #d6d9de;
+    border-radius: 14px;
+    background: rgba(255,255,255,.99);
+    box-shadow: 0 12px 36px rgba(0,0,0,.28);
+    transform: translate(-50%, -50%);
+  }
+
+  .road-merge-property-title {
+    margin-bottom: 7px;
+    color: #1c1c1e;
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  .road-merge-property-note {
+    margin-bottom: 14px;
+    color: #666;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .road-merge-property-actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .road-merge-property-actions button {
+    min-height: 42px;
+    border: 1px solid #cfd4da;
+    border-radius: 9px;
+    background: #fff;
+    color: #222;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .road-merge-property-actions button[data-source="first"],
+  .road-merge-property-actions button[data-source="second"] {
+    border-color: #8ab7f0;
+    background: #f3f8ff;
+    color: #1f5f9d;
+  }
+
+  .road-merge-property-actions .cancel {
+    color: #666;
+    background: #f6f6f7;
   }
 
 </style>
