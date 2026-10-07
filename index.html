@@ -16319,7 +16319,12 @@
         const pathTier = getRoadPathTier();
 
         allRoads.forEach(function(road) {
-          syncRoadDerivedDisplayState(road);
+          const displayStateChanged = syncRoadDerivedDisplayState(road);
+
+          // 상태가 바뀐 도로는 현재 축척 단계와 관계없이 즉시 재스타일링.
+          if (displayStateChanged) {
+            syncRoadLayerStackForRoad(road);
+          }
 
           const visible =
             LAYERS[road.layerId].visible &&
@@ -19997,30 +20002,38 @@
           const before = pathA[pathA.length - 2];
           const after = pathB[1];
 
-          // 점선/대시 선형이 분할점에서 패턴을 다시 시작하면서 생기는
-          // 시각적 빈틈을 2m + 2m의 짧은 solid 보조선으로만 메움.
+          // 상태가 다른 두 구간 사이에 실선 보강선을 만들면
+          // 미개설/계획구간 일부가 개설처럼 보이므로 보강하지 않음.
+          syncRoadDerivedDisplayState(roadA);
+          syncRoadDerivedDisplayState(roadB);
+
+          if (roadA.statusKey !== roadB.statusKey) continue;
+
           const left = pointTowardDistance(shared, before, 2.0);
           const right = pointTowardDistance(shared, after, 2.0);
 
           const style = ROAD_STYLES[roadA.styleKey] || ROAD_STYLES.FARM;
+          const stack = getRoadLayerStack(roadA.styleKey);
+          const topConfig = stack[0] || null;
+
           const joinLine = new kakao.maps.Polyline({
             map: null,
             path: [left, shared, right],
             strokeWeight: mapStrokePx(
-              roadA.statusKey === "UNOPENED"
-                ? Math.max(style.mid || 3, STATUS_STYLES.UNOPENED_SIZE)
-                : (style.mid || 3),
+              (roadA.statusKey === "UNOPENED" || roadA.statusKey === "UNEXPANDED")
+                ? Math.max(Number(style.mid) || 3, STATUS_STYLES.UNOPENED_SIZE)
+                : (Number(style.mid) || 3),
               1
             ),
             strokeColor: getRoadLayerDisplayColor(
               roadA.styleKey,
-              getRoadLayerStack(roadA.styleKey)[0]
+              topConfig || { color: style.color, skyColor: style.color }
             ),
             strokeOpacity: Math.max(
               0,
               Math.min(100, Number(style.topOpacity) || 100)
             ) / 100,
-            strokeStyle: "solid",
+            strokeStyle: getStatusStrokeStyle(roadA.statusKey),
             zIndex: 34
           });
 
@@ -25102,9 +25115,24 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return "NORMAL";
         }
 
-        // 경주시 농어촌도로는 저장되어 있는 '기타' 문자열이 아니라
-        // 구분 + 차선 + 도로폭을 기준으로 매번 자동 판정함.
-        // 이 방식으로 속성 수정/분할/병합/추가 뒤에도 화면 선형 상태가 즉시 일치함.
+        // 원본/편집 데이터에 명시된 미개설·계획구간은 반드시 우선 적용.
+        // '개설' 표기가 있더라도 차선·도로폭이 기준에 미달하면 자동판정 결과를 따름.
+        const explicitStatus = String(
+          properties["기타"] ||
+          properties.Opened ||
+          properties.Opend ||
+          properties["개설여부"] ||
+          ""
+        ).trim();
+
+        if (explicitStatus.includes("계획")) return "PLAN";
+        if (
+          explicitStatus.includes("미개설") ||
+          explicitStatus.includes("미확장")
+        ) {
+          return "UNOPENED";
+        }
+
         const gubun =
           properties["구분"] ||
           properties.GUBUN ||
