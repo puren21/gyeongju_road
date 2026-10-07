@@ -8622,6 +8622,66 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 드래그 조절바 색상/크기 통일 ===== */
+  :root {
+    --drag-handle-blue: rgba(47,145,242,.82);
+    --drag-handle-blue-active: rgba(47,145,242,1);
+  }
+
+  /* 좌측 메뉴 조절바: 기존보다 조금 크게 */
+  #listResizeHandle::after {
+    background: var(--drag-handle-blue) !important;
+  }
+
+  @media (max-width:700px) {
+    #listResizeHandle::after {
+      width: 72px !important;
+      height: 9px !important;
+      background: var(--drag-handle-blue) !important;
+    }
+
+    body.list-resizing #listResizeHandle::after {
+      width: 84px !important;
+      height: 10px !important;
+      background: var(--drag-handle-blue-active) !important;
+    }
+
+    #listPanel .list-header::before {
+      width: 72px !important;
+      height: 9px !important;
+      background: var(--drag-handle-blue) !important;
+    }
+
+    #listOpen::before {
+      width: 68px !important;
+      height: 8px !important;
+      background: var(--drag-handle-blue) !important;
+    }
+  }
+
+  /* 노선 속성창 하단 조절바: 좌측 메뉴보다 한 단계 더 크게 */
+  .road-popup .road-popup-resize-handle::before {
+    width: 90px !important;
+    height: 10px !important;
+    background: var(--drag-handle-blue) !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,.18) !important;
+  }
+
+  .road-popup .road-popup-resize-handle:hover::before,
+  body.road-popup-resizing .road-popup .road-popup-resize-handle::before {
+    width: 102px !important;
+    height: 11px !important;
+    background: var(--drag-handle-blue-active) !important;
+  }
+
+  @media (max-width:700px) {
+    .road-popup .road-popup-resize-handle::before {
+      width: 92px !important;
+      height: 10px !important;
+    }
+  }
+
 </style>
 
 </head>
