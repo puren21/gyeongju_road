@@ -23540,17 +23540,15 @@
       function getStatusStrokeStyle(statusKey) {
         let style = "solid";
 
-        if (statusKey === "UNOPENED") {
-          style = STATUS_STYLES.UNOPENED_GAP;
-        } else if (statusKey === "UNEXPANDED") {
-          style = STATUS_STYLES.UNEXPANDED;
+        // 농어촌도로 자동판정 결과와 화면 표현을 일치시킴.
+        // 미개설은 항상 대시, 계획구간은 점선으로 표시함.
+        if (statusKey === "UNOPENED" || statusKey === "UNEXPANDED") {
+          style = "dash";
         } else if (statusKey === "PLAN") {
           style = "dot";
         }
 
-        // "none"은 표시 여부에서 처리하고,
-        // Kakao Polyline에는 유효한 strokeStyle만 전달함.
-        return style === "none" ? "solid" : style;
+        return style;
       }
 
       function getRoadStrokeWeight(road, selected = false) {
