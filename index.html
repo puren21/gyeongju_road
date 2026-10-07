@@ -14992,7 +14992,11 @@
           if (value && value !== "-" && values.indexOf(value) === -1) values.push(value);
         });
 
-        return values[0] || "농어촌도로";
+        const normalized = values.find(function(value) {
+          return value === "면도" || value === "리도" || value === "농도";
+        });
+
+        return normalized || values[0] || "농어촌도로";
       }
 
       function removeSelectedRouteBalloon() {
@@ -18331,7 +18335,9 @@
           '</div>' +
           '<div class="road-attributes">' +
             row("노선번호", group.number) +
-            row("구분", joinValues(uniqueValues(list, "GUBUN"))) +
+            // 농어촌도로 구분은 실제 속성의 '구분' 또는 GUBUN 값을 읽어
+            // 면도 / 리도 / 농도로 표시함.
+            row("구분", getRoadGroupTypeLabel(group)) +
             row("구간현황", statusLengthSummary(group), "", "wrap-status") +
             row("차선현황", rangeValues(list, "차선")) +
             row("도로폭", rangeValues(list, "도로폭"), " m") +
