@@ -8397,6 +8397,21 @@
       filter: drop-shadow(0 1px 1px rgba(0,0,0,.22));
     }
 
+
+  /* ===== 2026-10-07: 스카이뷰 level 1 이후 강제 2배 확대 ===== */
+  #map {
+    overflow: hidden !important;
+  }
+
+  body.sky-extra-zoom #map > div:first-child {
+    transform: scale(2) !important;
+    transform-origin: 50% 50% !important;
+  }
+
+  body.sky-extra-zoom #zoomInBtn {
+    opacity: .55;
+  }
+
 </style>
 
 </head>
@@ -10401,7 +10416,11 @@
           removeSelectedRouteBalloon();
         }
         if (isSkyExtraZoomActive()) {
-          restoreSkyExtraZoomCenter();
+          if (!isSkyViewMode || map.getLevel() !== 1) {
+            setSkyExtraZoom(false);
+          } else {
+            restoreSkyExtraZoomCenter();
+          }
         }
 
         if (IS_WINDOWS) {
@@ -10503,10 +10522,24 @@
       };
 
       document.getElementById("zoomInBtn").onclick = function () {
-        map.setLevel(map.getLevel() - 1, { animate: true });
+        if (isSkyViewMode && map.getLevel() === 1) {
+          if (!isSkyExtraZoomActive()) {
+            lockSkyExtraZoomCenter();
+            setSkyExtraZoom(true);
+          }
+          return;
+        }
+
+        setSkyExtraZoom(false);
+        map.setLevel(Math.max(1, map.getLevel() - 1), { animate: true });
       };
 
       document.getElementById("zoomOutBtn").onclick = function () {
+        if (isSkyExtraZoomActive()) {
+          setSkyExtraZoom(false);
+          return;
+        }
+
         map.setLevel(map.getLevel() + 1, { animate: true });
       };
 
@@ -11520,13 +11553,50 @@
 
 
       function bindSkyExtraZoomPointerFix() {
-        // 일반지도와 동일한 기본 확대/축소 동작을 사용함.
+        const mapElement = document.getElementById("map");
+        if (!mapElement || mapElement.dataset.skyExtraZoomBound === "1") return;
+        mapElement.dataset.skyExtraZoomBound = "1";
+
+        // 스카이뷰 level 1에서 휠을 한 번 더 올리면 2배 확대,
+        // 반대로 휠을 내리면 먼저 2배 확대를 해제한 뒤 기본 축소로 돌아감.
+        mapElement.addEventListener("wheel", function(event) {
+          if (!isSkyViewMode || map.getLevel() !== 1) return;
+
+          if (event.deltaY < 0 && !isSkyExtraZoomActive()) {
+            event.preventDefault();
+            event.stopPropagation();
+            lockSkyExtraZoomCenter();
+            setSkyExtraZoom(true);
+          } else if (event.deltaY > 0 && isSkyExtraZoomActive()) {
+            event.preventDefault();
+            event.stopPropagation();
+            setSkyExtraZoom(false);
+          }
+        }, { passive: false, capture: true });
       }
 
       function setSkyExtraZoom(enabled) {
-        // 스카이뷰도 일반지도와 동일한 Kakao 기본 확대/축소 방식을 사용함.
-        document.body.classList.remove("sky-extra-zoom");
+        const active = !!enabled && !!isSkyViewMode && map && map.getLevel() === 1;
+
+        if (active) {
+          skyExtraZoomLockedCenter = map.getCenter();
+          document.body.classList.add("sky-extra-zoom");
+        } else {
+          document.body.classList.remove("sky-extra-zoom");
+          skyExtraZoomLockedCenter = null;
+        }
+
+        // CSS 확대 상태 전환 직후 Kakao 오버레이/타일을 현재 중심에 다시 맞춤.
+        requestAnimationFrame(function() {
+          if (!map) return;
+          if (typeof map.relayout === "function") map.relayout();
+          if (active && skyExtraZoomLockedCenter) {
+            map.setCenter(skyExtraZoomLockedCenter);
+          }
+        });
       }
+
+      bindSkyExtraZoomPointerFix();
 
 
       function switchBaseMapTypePreserveView(typeId) {
@@ -11598,7 +11668,7 @@
       };
 
       skyBtn.onclick = function () {
-        setSkyExtraZoom(true);
+        setSkyExtraZoom(false);
         isSkyViewMode = true;
 
         const hybridOn = !hybridCheck || hybridCheck.checked;
@@ -11620,7 +11690,8 @@
       hybridCheck.checked = true;
 
       hybridCheck.onchange = function () {
-        setSkyExtraZoom(isSkyViewMode);
+        const keepExtraZoom = isSkyExtraZoomActive();
+        setSkyExtraZoom(false);
 
         if (skyBtn.classList.contains("active")) {
           const hybridOn = !hybridCheck || hybridCheck.checked;
@@ -11634,6 +11705,12 @@
           refreshRoadColorsForMapType();
           updateBoundaryVisibility();
           resetTownshipStyles();
+
+          if (keepExtraZoom && map.getLevel() === 1) {
+            setTimeout(function() {
+              setSkyExtraZoom(true);
+            }, 140);
+          }
         }
       };
 
