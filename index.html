@@ -8988,6 +8988,88 @@
     background: #f3f5f7;
   }
 
+
+  /* ===== 2026-10-07: 실폭 + 보정폭 동시 표시/선택 ===== */
+  .road-width-point-actual {
+    width: 8px !important;
+    height: 8px !important;
+    border-width: 2px !important;
+    background: #d94a3a !important;
+  }
+
+  .road-width-result-label {
+    display: grid !important;
+    gap: 3px !important;
+    min-width: 154px !important;
+    padding: 6px !important;
+    border-radius: 9px !important;
+    pointer-events: auto !important;
+  }
+
+  .road-width-result-row {
+    display: grid;
+    grid-template-columns: 1fr 30px;
+    gap: 4px;
+    align-items: center;
+    min-height: 34px;
+    padding: 2px 3px 2px 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: #fff;
+  }
+
+  .road-width-result-row.selected {
+    border-color: rgba(37,143,255,.55);
+    background: #eef6ff;
+  }
+
+  .road-width-result-value {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 15px 34px 1fr;
+    gap: 4px;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .road-width-result-radio {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: #258fff;
+  }
+
+  .road-width-result-caption {
+    color: #6c737b;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: left;
+  }
+
+  .road-width-result-row strong {
+    display: inline !important;
+    margin: 0 !important;
+    color: #202124 !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    text-align: right;
+  }
+
+  .road-width-result-row:first-child strong {
+    color: #d94a3a !important;
+  }
+
+  .road-width-result-row:last-child strong {
+    color: #258fff !important;
+  }
+
+  .road-width-copy-btn {
+    width: 28px !important;
+    height: 28px !important;
+    line-height: 26px !important;
+  }
+
 </style>
 
 </head>
@@ -10280,6 +10362,10 @@
       }
 
       kakao.maps.event.addListener(map, "rightclick", function(mouseEvent) {
+        if (roadWidthMeasureMode) {
+          stopRoadWidthMeasure(true);
+          return;
+        }
         if (measureMode) return;
         showParcelContextMenu(mouseEvent.latLng);
       });
@@ -11060,15 +11146,19 @@
         if (!roadWidthMeasureMode) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        stopRoadWidthMeasure();
+        stopRoadWidthMeasure(true);
       }, true);
       let roadWidthIndex = null;
       let roadWidthIndexPromise = null;
       const roadWidthTileCache = new Map();
       const ROAD_WIDTH_TILE_CACHE_LIMIT = 6;
       let roadWidthMeasureLine = null;
+      let roadWidthCorrectedLine = null;
       let roadWidthMeasureLabel = null;
       let roadWidthMeasurePoints = [];
+      let roadWidthCorrectedMarkers = [];
+      let roadWidthResultState = null;
+      let roadWidthSelectedKind = "corrected";
 
       const ROAD_WIDTH_EARTH_RADIUS = 6371008.8;
       const ROAD_WIDTH_RAD = Math.PI / 180;
@@ -11173,11 +11263,16 @@
 
       function clearRoadWidthResult() {
         removeOverlay(roadWidthMeasureLine);
+        removeOverlay(roadWidthCorrectedLine);
         removeOverlay(roadWidthMeasureLabel);
         roadWidthMeasurePoints.forEach(removeOverlay);
+        roadWidthCorrectedMarkers.forEach(removeOverlay);
         roadWidthMeasureLine = null;
+        roadWidthCorrectedLine = null;
         roadWidthMeasureLabel = null;
         roadWidthMeasurePoints = [];
+        roadWidthCorrectedMarkers = [];
+        roadWidthResultState = null;
       }
 
       function startRoadWidthMeasure() {
@@ -11191,12 +11286,12 @@
         closeRoadEditPanel();
       }
 
-      function stopRoadWidthMeasure() {
+      function stopRoadWidthMeasure(preserveResult) {
         roadWidthMeasureMode = false;
         roadWidthBtn.classList.remove("active");
         roadWidthHint.style.display = "none";
         map.setCursor("");
-        clearRoadWidthResult();
+        if (!preserveResult) clearRoadWidthResult();
       }
 
       window.stopRoadWidthMeasure = stopRoadWidthMeasure;
@@ -11435,105 +11530,338 @@
         };
       }
 
+      function roadWidthMarkerImage() {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">' +
+            '<circle cx="11" cy="11" r="8.5" fill="#258fff" stroke="#ffffff" stroke-width="3"/>' +
+          '</svg>';
+        return new kakao.maps.MarkerImage(
+          "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
+          new kakao.maps.Size(22, 22),
+          { offset: new kakao.maps.Point(11, 11) }
+        );
+      }
+
+      function roadWidthCopyNumber(value, button) {
+        const textValue = Number(value).toFixed(1);
+
+        function done() {
+          if (!button) return;
+          const old = button.textContent;
+          button.textContent = "✓";
+          setTimeout(function() { button.textContent = old; }, 850);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(textValue).then(done).catch(function() {
+            const input = document.createElement("textarea");
+            input.value = textValue;
+            input.style.position = "fixed";
+            input.style.opacity = "0";
+            document.body.appendChild(input);
+            input.select();
+            try { document.execCommand("copy"); } catch (e) {}
+            input.remove();
+            done();
+          });
+          return;
+        }
+
+        const input = document.createElement("textarea");
+        input.value = textValue;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        input.remove();
+        done();
+      }
+
+      function updateRoadWidthResultPanel() {
+        const state = roadWidthResultState;
+        if (!state || !state.panel) return;
+
+        const actualText = state.actualWidth.toFixed(1);
+        const correctedText = state.correctedWidth.toFixed(1);
+
+        state.actualValue.textContent = actualText + " m";
+        state.correctedValue.textContent = correctedText + " m";
+        state.actualCopy.dataset.value = actualText;
+        state.correctedCopy.dataset.value = correctedText;
+
+        state.actualRow.classList.toggle(
+          "selected",
+          roadWidthSelectedKind === "actual"
+        );
+        state.correctedRow.classList.toggle(
+          "selected",
+          roadWidthSelectedKind === "corrected"
+        );
+        state.actualRadio.checked = roadWidthSelectedKind === "actual";
+        state.correctedRadio.checked = roadWidthSelectedKind === "corrected";
+
+        const midT = (state.correctedA + state.correctedB) / 2;
+        const middle = roadWidthLocalToLatLng(
+          state.normal.x * midT,
+          state.normal.y * midT,
+          state.center
+        );
+        roadWidthMeasureLabel.setPosition(middle);
+      }
+
+      function updateRoadWidthCorrectedGeometry(changedIndex, markerPosition) {
+        const state = roadWidthResultState;
+        if (!state) return;
+
+        const local = roadWidthToLocal(
+          [markerPosition.getLng(), markerPosition.getLat()],
+          state.center
+        );
+
+        let t = local.x * state.normal.x + local.y * state.normal.y;
+        t = Math.max(-60, Math.min(60, t));
+
+        if (changedIndex === 0) {
+          t = Math.min(t, state.correctedB - 0.5);
+          state.correctedA = t;
+        } else {
+          t = Math.max(t, state.correctedA + 0.5);
+          state.correctedB = t;
+        }
+
+        const snapped = roadWidthLocalToLatLng(
+          state.normal.x * t,
+          state.normal.y * t,
+          state.center
+        );
+
+        const marker = roadWidthCorrectedMarkers[changedIndex];
+        if (marker) marker.setPosition(snapped);
+
+        const left = roadWidthLocalToLatLng(
+          state.normal.x * state.correctedA,
+          state.normal.y * state.correctedA,
+          state.center
+        );
+        const right = roadWidthLocalToLatLng(
+          state.normal.x * state.correctedB,
+          state.normal.y * state.correctedB,
+          state.center
+        );
+
+        state.correctedWidth = Math.max(
+          0,
+          state.correctedB - state.correctedA
+        );
+
+        if (roadWidthCorrectedLine) {
+          roadWidthCorrectedLine.setPath([left, right]);
+        }
+
+        updateRoadWidthResultPanel();
+      }
+
+      function createRoadWidthResultPanel(actualWidth, correctedWidth) {
+        const panel = document.createElement("div");
+        panel.className = "road-width-result-label";
+
+        function makeRow(kind, label, value) {
+          const row = document.createElement("div");
+          row.className = "road-width-result-row";
+
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = "roadWidthResultChoice";
+          radio.className = "road-width-result-radio";
+          radio.value = kind;
+          radio.checked = roadWidthSelectedKind === kind;
+
+          const textWrap = document.createElement("label");
+          textWrap.className = "road-width-result-value";
+          textWrap.appendChild(radio);
+
+          const caption = document.createElement("span");
+          caption.className = "road-width-result-caption";
+          caption.textContent = label;
+
+          const strong = document.createElement("strong");
+          strong.textContent = Number(value).toFixed(1) + " m";
+
+          textWrap.appendChild(caption);
+          textWrap.appendChild(strong);
+
+          const copy = document.createElement("button");
+          copy.type = "button";
+          copy.className = "road-width-copy-btn";
+          copy.title = label + " 숫자만 복사";
+          copy.setAttribute("aria-label", label + " 숫자 복사");
+          copy.textContent = "⧉";
+          copy.dataset.value = Number(value).toFixed(1);
+
+          radio.addEventListener("change", function(event) {
+            event.stopPropagation();
+            roadWidthSelectedKind = kind;
+            updateRoadWidthResultPanel();
+          });
+
+          textWrap.addEventListener("click", function(event) {
+            event.stopPropagation();
+            roadWidthSelectedKind = kind;
+            radio.checked = true;
+            updateRoadWidthResultPanel();
+          });
+
+          copy.addEventListener("click", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            roadWidthSelectedKind = kind;
+            updateRoadWidthResultPanel();
+            roadWidthCopyNumber(Number(copy.dataset.value), copy);
+          });
+
+          panel.appendChild(row);
+          row.appendChild(textWrap);
+          row.appendChild(copy);
+
+          return {
+            row: row,
+            radio: radio,
+            strong: strong,
+            copy: copy
+          };
+        }
+
+        const actual = makeRow("actual", "실폭", actualWidth);
+        const corrected = makeRow("corrected", "보정", correctedWidth);
+
+        return {
+          panel: panel,
+          actualRow: actual.row,
+          actualRadio: actual.radio,
+          actualValue: actual.strong,
+          actualCopy: actual.copy,
+          correctedRow: corrected.row,
+          correctedRadio: corrected.radio,
+          correctedValue: corrected.strong,
+          correctedCopy: corrected.copy
+        };
+      }
+
       function renderRoadWidthResult(center, normal, candidate) {
         clearRoadWidthResult();
 
-        const left = roadWidthLocalToLatLng(
+        const actualLeft = roadWidthLocalToLatLng(
           normal.x * candidate.a,
           normal.y * candidate.a,
           center
         );
-        const right = roadWidthLocalToLatLng(
+        const actualRight = roadWidthLocalToLatLng(
           normal.x * candidate.b,
           normal.y * candidate.b,
           center
         );
+
+        // 1) 실폭도로 기준 자동 측정선
+        roadWidthMeasureLine = new kakao.maps.Polyline({
+          map: map,
+          path: [actualLeft, actualRight],
+          strokeWeight: 3,
+          strokeColor: "#d94a3a",
+          strokeOpacity: 0.78,
+          strokeStyle: "dash",
+          zIndex: 188
+        });
+
+        [actualLeft, actualRight].forEach(function(position) {
+          roadWidthMeasurePoints.push(new kakao.maps.CustomOverlay({
+            map: map,
+            position: position,
+            content: '<div class="road-width-point road-width-point-actual"></div>',
+            xAnchor: 0.5,
+            yAnchor: 0.5,
+            zIndex: 189
+          }));
+        });
+
+        // 2) 보정선은 자동 측정값에서 시작하고 사용자가 끝점을 직접 조정
+        roadWidthCorrectedLine = new kakao.maps.Polyline({
+          map: map,
+          path: [actualLeft, actualRight],
+          strokeWeight: 4,
+          strokeColor: "#258fff",
+          strokeOpacity: 0.96,
+          strokeStyle: "solid",
+          zIndex: 190
+        });
+
+        const markerImage = roadWidthMarkerImage();
+        [actualLeft, actualRight].forEach(function(position, index) {
+          const marker = new kakao.maps.Marker({
+            map: map,
+            position: position,
+            draggable: true,
+            image: markerImage,
+            zIndex: 194
+          });
+
+          kakao.maps.event.addListener(marker, "drag", function() {
+            updateRoadWidthCorrectedGeometry(index, marker.getPosition());
+          });
+
+          kakao.maps.event.addListener(marker, "dragend", function() {
+            updateRoadWidthCorrectedGeometry(index, marker.getPosition());
+          });
+
+          roadWidthCorrectedMarkers.push(marker);
+        });
+
+        const panelRefs = createRoadWidthResultPanel(
+          candidate.width,
+          candidate.width
+        );
+
+        roadWidthResultState = {
+          center: center,
+          normal: normal,
+          actualA: candidate.a,
+          actualB: candidate.b,
+          actualWidth: candidate.width,
+          correctedA: candidate.a,
+          correctedB: candidate.b,
+          correctedWidth: candidate.width,
+          panel: panelRefs.panel,
+          actualRow: panelRefs.actualRow,
+          actualRadio: panelRefs.actualRadio,
+          actualValue: panelRefs.actualValue,
+          actualCopy: panelRefs.actualCopy,
+          correctedRow: panelRefs.correctedRow,
+          correctedRadio: panelRefs.correctedRadio,
+          correctedValue: panelRefs.correctedValue,
+          correctedCopy: panelRefs.correctedCopy
+        };
+
         const middle = roadWidthLocalToLatLng(
           normal.x * ((candidate.a + candidate.b) / 2),
           normal.y * ((candidate.a + candidate.b) / 2),
           center
         );
 
-        roadWidthMeasureLine = new kakao.maps.Polyline({
-          map: map,
-          path: [left, right],
-          strokeWeight: 4,
-          strokeColor: "#f01818",
-          strokeOpacity: 0.92,
-          strokeStyle: "solid",
-          zIndex: 190
-        });
-
-        [left, right].forEach(function(position) {
-          roadWidthMeasurePoints.push(new kakao.maps.CustomOverlay({
-            map: map,
-            position: position,
-            content: '<div class="road-width-point"></div>',
-            xAnchor: 0.5,
-            yAnchor: 0.5,
-            zIndex: 191
-          }));
-        });
-
-        const widthText = candidate.width.toFixed(1);
-
         roadWidthMeasureLabel = new kakao.maps.CustomOverlay({
           map: map,
           position: middle,
-          content:
-            '<div class="road-width-result-label">' +
-              '<strong>' + widthText + ' m</strong>' +
-              '<button type="button" class="road-width-copy-btn" data-road-width-copy="' + widthText + '" title="숫자만 복사" aria-label="도로폭 숫자 복사">⧉</button>' +
-            '</div>',
+          content: panelRefs.panel,
           xAnchor: 0.5,
-          yAnchor: 1.35,
-          zIndex: 192
+          yAnchor: 1.45,
+          zIndex: 195
         });
 
-        setTimeout(function() {
-          const copyButton = document.querySelector('.road-width-copy-btn[data-road-width-copy="' + widthText + '"]');
-          if (!copyButton || copyButton.dataset.bound === "1") return;
-          copyButton.dataset.bound = "1";
+        updateRoadWidthResultPanel();
 
-          copyButton.addEventListener("click", function(event) {
-            event.preventDefault();
-            event.stopPropagation();
-
-            const value = copyButton.getAttribute("data-road-width-copy") || "";
-
-            function showCopied() {
-              const oldText = copyButton.textContent;
-              copyButton.textContent = "✓";
-              setTimeout(function() {
-                copyButton.textContent = oldText;
-              }, 900);
-            }
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(value).then(showCopied).catch(function() {
-                const input = document.createElement("textarea");
-                input.value = value;
-                input.style.position = "fixed";
-                input.style.opacity = "0";
-                document.body.appendChild(input);
-                input.select();
-                try { document.execCommand("copy"); } catch (e) {}
-                input.remove();
-                showCopied();
-              });
-            } else {
-              const input = document.createElement("textarea");
-              input.value = value;
-              input.style.position = "fixed";
-              input.style.opacity = "0";
-              document.body.appendChild(input);
-              input.select();
-              try { document.execCommand("copy"); } catch (e) {}
-              input.remove();
-              showCopied();
-            }
-          });
-        }, 0);
+        if (roadWidthMeasureMode) {
+          roadWidthHint.querySelector("span").textContent =
+            "파란 끝점을 실제 통행 가능한 도로 경계로 드래그하세요. 우클릭하면 종료됩니다.";
+        }
       }
 
       async function measureRoadWidthAt(position, road) {
@@ -11612,7 +11940,7 @@
           );
         } finally {
           map.setCursor(roadWidthMeasureMode ? "crosshair" : "");
-          if (roadWidthMeasureMode) {
+          if (roadWidthMeasureMode && !roadWidthResultState) {
             roadWidthHint.querySelector("span").textContent =
               "도로구간 라인 위에서 폭을 확인할 지점을 클릭하세요.";
           }
