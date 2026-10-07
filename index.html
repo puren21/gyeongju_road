@@ -14767,11 +14767,15 @@
         }
 
         const unit = group.layerId === "city" ? " m" : " km";
+        const formatLength = group.layerId === "city"
+          ? formatRoadLength
+          : formatRoadLengthKm;
+
         return [
-          totals.NORMAL ? "개설 " + formatRoadLength(totals.NORMAL) + unit : "",
-          totals.UNEXPANDED ? "미확장 " + formatRoadLength(totals.UNEXPANDED) + unit : "",
-          totals.UNOPENED ? "미개설 " + formatRoadLength(totals.UNOPENED) + unit : "",
-          totals.PLAN ? "계획 " + formatRoadLength(totals.PLAN) + unit : ""
+          totals.NORMAL ? "개설 " + formatLength(totals.NORMAL) + unit : "",
+          totals.UNEXPANDED ? "미확장 " + formatLength(totals.UNEXPANDED) + unit : "",
+          totals.UNOPENED ? "미개설 " + formatLength(totals.UNOPENED) + unit : "",
+          totals.PLAN ? "계획 " + formatLength(totals.PLAN) + unit : ""
         ].filter(Boolean).join(" · ") || "-";
       }
 
@@ -15563,7 +15567,7 @@
           );
           fields += buildRoadEditField("차선", "lane", safe(props["차선"]) === "-" ? "" : props["차선"]);
           fields += buildRoadEditField("도로폭", "width", safe(props["도로폭"]) === "-" ? "" : props["도로폭"]);
-          fields += buildRoadEditField("연장", "length", formatRoadLength(roadGeometryLengthKm(road)), "text", null, true);
+          fields += buildRoadEditField("연장", "length", formatRoadLengthKm(roadGeometryLengthKm(road)), "text", null, true);
           fields += buildRoadEditField("기점", "start", safe(props["기점"]) === "-" ? "" : props["기점"]);
           fields += buildRoadEditField("종점", "end", safe(props["종점"]) === "-" ? "" : props["종점"]);
         }
@@ -16312,7 +16316,7 @@
           values.status = data.get("status") || "개설";
           values.lane = data.get("lane") || "";
           values.width = data.get("width") || "";
-          values.length = formatRoadLength(roadGeometryLengthKm(road));
+          values.length = formatRoadLengthKm(roadGeometryLengthKm(road));
           values.start = data.get("start") || "";
           values.end = data.get("end") || "";
         }
@@ -17605,6 +17609,10 @@
 
           // 현재 열린 노선정보도 저장된 선형 기준으로 즉시 다시 표시한다.
           if (selectedRoadPopupState && selectedRoadPopupState.groupKey === group.key) {
+            selectedRoadObject = road;
+            selectedRoadPopupState.road = road;
+            setRoadGroupHighlight(group.key, true);
+
             const existingPopup = document.querySelector("body > .road-popup");
             if (existingPopup) existingPopup.remove();
             createFixedRoadPopup(groupPopup(group, road));
@@ -17820,6 +17828,35 @@
         createFixedRoadPopup(html);
       }
 
+
+      function findClosestRoadInGroup(group, position) {
+        if (!group || !position || !Array.isArray(group.roads) || !group.roads.length) {
+          return null;
+        }
+
+        let bestRoad = null;
+        let bestDistance = Infinity;
+
+        group.roads.forEach(function(candidate, index) {
+          const path =
+            candidate.pathFine ||
+            (group.paths && group.paths[index]) ||
+            [];
+
+          if (!path || path.length < 2) return;
+
+          const nearest = nearestPointOnRoadSegment(path, position);
+          if (!nearest) return;
+
+          if (nearest.distanceSq < bestDistance) {
+            bestDistance = nearest.distanceSq;
+            bestRoad = candidate;
+          }
+        });
+
+        return bestRoad || group.roads[0] || null;
+      }
+
       function showInfo(position, groupKey, road) {
         const group = groups.get(groupKey);
         if (!group) return;
@@ -17852,7 +17889,24 @@
             if (!selectedRoadPopupState || selectedRoadPopupState.groupKey !== groupKey) return;
             const currentGroup = groups.get(groupKey);
             if (!currentGroup) return;
-            const currentRoad = selectedRoadPopupState.road || road || currentGroup.roads[0] || null;
+
+            // 분할 저장 후 온라인 모델이 다시 복원되면 기존 road 객체 참조가 바뀔 수 있음.
+            // 사용자가 클릭한 위치에 가장 가까운 실제 분할 구간을 다시 찾아 선택 대상으로 지정.
+            const currentRoad =
+              findClosestRoadInGroup(
+                currentGroup,
+                selectedRoadPopupState.anchorPosition || position
+              ) ||
+              currentGroup.roads[0] ||
+              null;
+
+            selectedRoadObject = currentRoad;
+            selectedRoadPopupState.road = currentRoad;
+
+            // 선택한 분할 구간만 빨간색, 같은 노선의 다른 구간은 파란색으로 재강조.
+            setRoadGroupHighlight(groupKey, true);
+            updateSelectedRouteBalloon();
+
             const existingPopup = document.querySelector("body > .road-popup");
             if (existingPopup) existingPopup.remove();
             createFixedRoadPopup(groupPopup(currentGroup, currentRoad));
@@ -18212,10 +18266,10 @@
             row("구간현황", statusLengthSummary(group), "", "wrap-status") +
             row("차선현황", rangeValues(list, "차선")) +
             row("도로폭", rangeValues(list, "도로폭"), " m") +
-            row("총연장", formatRoadLength(groupRoadGeometryTotalKm(group)), " km") +
+            row("총연장", formatRoadLengthKm(groupRoadGeometryTotalKm(group)), " km") +
             row("차선현황(선택구간)", current["차선"] !== undefined && current["차선"] !== null && String(current["차선"]).trim() !== "" ? current["차선"] : "-") +
             row("도로폭(선택구간)", current["도로폭"] !== undefined && current["도로폭"] !== null && String(current["도로폭"]).trim() !== "" ? current["도로폭"] : "-", current["도로폭"] !== undefined && current["도로폭"] !== null && String(current["도로폭"]).trim() !== "" ? " m" : "") +
-            row("연장(선택구간)", formatRoadLength(roadGeometryLengthKm(road)), " km") +
+            row("연장(선택구간)", formatRoadLengthKm(roadGeometryLengthKm(road)), " km") +
             row("기점", joinValues(uniqueValues(list, "기점"))) +
             row("종점", joinValues(uniqueValues(list, "종점"))) +
             row("노선상태", roadStatusLabel(currentStatus)) +
@@ -18654,6 +18708,16 @@
       function formatRoadLength(value) {
         const rounded = Math.round((Number(value) + Number.EPSILON) * 1000) / 1000;
         return rounded.toLocaleString("ko-KR", { maximumFractionDigits: 3 });
+      }
+
+      function formatRoadLengthKm(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return "0.0";
+        const rounded = Math.round((number + Number.EPSILON) * 10) / 10;
+        return rounded.toLocaleString("ko-KR", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1
+        });
       }
 
       function safe(value) {
