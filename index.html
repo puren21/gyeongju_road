@@ -9421,26 +9421,6 @@
   }
 
 
-  /* ===== 라인편집 상단 메뉴 닫기 버튼 ===== */
-  .geometry-edit-toolbar .geometry-toolbar-close {
-    min-width: 30px;
-    width: 30px;
-    padding: 0 !important;
-    border-color: #cfd3d8 !important;
-    background: #f3f4f5 !important;
-    color: #555 !important;
-    font-size: 20px !important;
-    font-weight: 500 !important;
-    line-height: 28px !important;
-  }
-
-  .geometry-edit-toolbar .geometry-toolbar-close:hover {
-    border-color: #aeb4bb !important;
-    background: #e7e9ec !important;
-    color: #222 !important;
-  }
-
-
   /* ===== 라인편집 아이콘 툴바 ===== */
   .geometry-edit-toolbar {
     overflow: visible !important;
@@ -9494,22 +9474,6 @@
     color: #b42318 !important;
     border-color: #e1a6a0 !important;
     background: #fff4f2 !important;
-  }
-
-  .geometry-edit-toolbar .geometry-icon-btn.save {
-    color: #248a3d !important;
-  }
-
-  .geometry-edit-toolbar .geometry-icon-btn.save:hover {
-    border-color: #8fc8a0 !important;
-    background: #f0faf3 !important;
-    color: #1f7a36 !important;
-  }
-
-  .geometry-edit-toolbar .geometry-toolbar-close {
-    color: #666 !important;
-    font-size: 0 !important;
-    line-height: normal !important;
   }
 
   .geometry-edit-toolbar .geometry-icon-btn[data-tooltip]::after {
@@ -20031,12 +19995,71 @@
         return true;
       }
 
+      function commitRoadGeometryBeforeSegmentSwitch() {
+        const state = roadGeometryEditState;
+        if (!state) return true;
+
+        // 분할/병합/추가 작업이 실제로 진행 중인 경우에는 구조 변경이 포함되므로
+        // 속성창의 저장 버튼으로 먼저 저장한 뒤 다른 라인을 선택하게 함.
+        const hasPendingSplit =
+          state.mode === "split" &&
+          state.splitPosition &&
+          Number.isInteger(state.splitSegmentIndex);
+
+        const hasPendingMerge =
+          state.mode === "merge" &&
+          state.mergeTargetRoad;
+
+        const hasPendingAdd =
+          state.mode === "add" &&
+          Array.isArray(state.addPath) &&
+          state.addPath.length >= 2;
+
+        if (hasPendingSplit || hasPendingMerge || hasPendingAdd) {
+          alert("현재 라인편집 내용을 속성창의 저장 버튼으로 먼저 저장해 주세요.");
+          return false;
+        }
+
+        // 꼭지점 편집/라인 붙이기처럼 현재 workingPath에 반영된 변경은
+        // 온라인 저장하지 않고 메모리에만 반영하여 다른 라인 선택 후에도 유지함.
+        if (hasRoadGeometryPendingChanges()) {
+          const group = state.group;
+          const road = state.road;
+          const path = (state.workingPath || []).map(function(point) {
+            return new kakao.maps.LatLng(point.getLat(), point.getLng());
+          });
+
+          if (path.length >= 2) {
+            const tolerance = getDisplaySimplifyTolerance(road.styleKey);
+            road.pathFine = path.slice();
+            road.pathMedium = simplifyLatLngPath(path, tolerance * 3.2);
+            road.pathCoarse = simplifyLatLngPath(path, tolerance * 7.0);
+            road._pathTier = null;
+
+            group.paths[state.roadIndex] = path.slice();
+            recalcRoadExtent(road, path);
+            recalcGroupBounds(group);
+
+            getRoadVisualLines(road)
+              .concat(road.hitLine ? [road.hitLine] : [])
+              .forEach(function(line) {
+                if (line) setRoadLinePathIfChanged(line, path, true);
+              });
+
+            setRoadEditDirty(true);
+          }
+        }
+
+        // save=true는 편집 시작 전 snapshot으로 되돌리지 않고 현재 메모리 상태를 유지함.
+        clearRoadGeometryEdit(true);
+        return true;
+      }
+
       function selectRoadSegmentDuringEdit(position, groupKey, road) {
         const group = groups.get(groupKey);
         if (!group || roadEditSessionGroupKey !== groupKey) return false;
-        if (roadGeometryEditState) return false;
 
-        // 이전 선택 라인의 현재 입력값을 먼저 메모리에 반영.
+        // 현재 속성 입력값은 라인 선택을 바꾸기 전에 메모리에 반영함.
         commitCurrentInlineRoadEditValues(groupKey);
 
         const targetRoad =
@@ -20046,17 +20069,37 @@
 
         if (!targetRoad) return false;
 
+        const currentGeometryRoad =
+          roadGeometryEditState && roadGeometryEditState.road;
+
+        // 다른 라인을 선택하면 기존 라인편집 창을 닫는 대신
+        // 현재 변경을 메모리에 보존한 뒤 동일 위치에 새 라인 기준으로 다시 유지함.
+        if (
+          roadGeometryEditState &&
+          currentGeometryRoad &&
+          currentGeometryRoad !== targetRoad
+        ) {
+          if (!commitRoadGeometryBeforeSegmentSwitch()) return false;
+        }
+
         setSelectedRoadSegment(group, targetRoad, position);
         selectedRoadGroupKey = groupKey;
         setRoadGroupHighlight(groupKey, true);
         updateSelectedRouteBalloon();
 
+        // 속성창은 선택한 라인의 값으로 갱신하되 편집 상태를 계속 유지함.
         const existingPopup = document.querySelector("body > .road-popup");
         if (existingPopup) existingPopup.remove();
 
         createFixedRoadPopup(groupPopup(group, targetRoad));
         syncRoadPopupEditToggle(groupKey, true);
         bindInlineRoadEditForm(groupKey);
+
+        // 라인편집 툴바도 항상 유지. 같은 라인이면 기존 상태를 그대로 사용하고,
+        // 다른 라인이면 새 라인 기준의 idle 상태로 즉시 다시 생성함.
+        if (!roadGeometryEditState) {
+          startRoadGeometryEdit(groupKey);
+        }
 
         return true;
       }
@@ -23257,7 +23300,7 @@
         toolbar.id = "geometryEditToolbar";
         toolbar.className = "geometry-edit-toolbar integrated";
         toolbar.innerHTML =
-          '<span class="geometry-edit-label" id="geometryEditHelp">라인편집 기능을 선택하세요.</span>' +
+          '<span class="geometry-edit-label" id="geometryEditHelp">라인편집 기능을 선택하세요. 저장은 속성창의 저장 버튼을 사용합니다.</span>' +
           '<button type="button" class="geometry-icon-btn" id="geometryVertexModeBtn" data-tooltip="꼭지점 편집" title="꼭지점 편집" aria-label="꼭지점 편집" onclick="setRoadGeometryEditMode(\'vertex\')">' +
             '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M7 18l5-7 5 7"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="17" cy="18" r="2"/></svg>' +
           '</button>' +
@@ -23280,12 +23323,6 @@
             : '') +
           '<button type="button" class="geometry-icon-btn" data-tooltip="취소" title="취소" aria-label="취소" onclick="cancelRoadGeometryEdit()">' +
             '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7l-5 5 5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg>' +
-          '</button>' +
-          '<button type="button" class="geometry-icon-btn save" id="saveRoadGeometryBtn" data-tooltip="저장" title="저장" aria-label="저장" onclick="saveRoadGeometryEdit({ keepEditing: true })">' +
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>' +
-          '</button>' +
-          '<button type="button" class="geometry-icon-btn geometry-toolbar-close" data-tooltip="라인편집 닫기" title="라인편집 닫기" aria-label="라인편집 닫기" onclick="closeRoadGeometryEditToolbar()">' +
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
           '</button>';
         document.body.appendChild(toolbar);
         enableGeometryEditToolbarDrag(toolbar);
@@ -23733,43 +23770,7 @@
 
       window.cancelRoadGeometryEdit = cancelRoadGeometryEdit;
 
-      function closeRoadGeometryEditToolbar() {
-        const state = roadGeometryEditState;
-        if (!state) {
-          const toolbar = document.getElementById("geometryEditToolbar");
-          if (toolbar) toolbar.remove();
-          return;
-        }
 
-        if (hasRoadGeometryPendingChanges()) {
-          const discard = window.confirm(
-            "저장하지 않은 라인편집 내용이 있습니다.\n\n닫으면 현재 라인편집 내용은 취소됩니다."
-          );
-          if (!discard) return;
-        }
-
-        const groupKey = roadEditSessionGroupKey || state.groupKey;
-        const road = state.road;
-
-        clearRoadGeometryEdit(false);
-
-        if (groupKey) {
-          roadEditSessionGroupKey = groupKey;
-          document.body.classList.add("road-edit-session-active");
-          syncRoadPopupEditToggle(groupKey, true);
-          restoreInlineRoadEditPopup(
-            groupKey,
-            road || getEditableRoad(groupKey)
-          );
-        }
-
-        if (selectedRoadGroupKey) {
-          setRoadGroupHighlight(selectedRoadGroupKey, true);
-          updateSelectedRouteBalloon();
-        }
-      }
-
-      window.closeRoadGeometryEditToolbar = closeRoadGeometryEditToolbar;
 
       function exportEditedRoadsGeoJSON() {
         const features = [];
