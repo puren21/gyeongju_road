@@ -8348,9 +8348,8 @@
     <hr class="road-legend-divider">
     <ul class="road-legend-status" aria-label="도로 개설 상태">
       <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusNormal" d="M2 12H46" stroke="#737d89" stroke-width="4"/></svg><span>개설</span></li>
-      <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusUnexpanded" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="6 4"/></svg><span>미확장</span></li>
       <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusUnopened" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="8 5"/></svg><span>미개설</span></li>
-      <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusPlan" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="1 6" stroke-linecap="round"/></svg><span>계획</span></li>
+      <li><svg viewBox="0 0 48 24" aria-hidden="true"><path id="legendStatusPlan" d="M2 12H46" stroke="#737d89" stroke-width="4" stroke-dasharray="1 6" stroke-linecap="round"/></svg><span>계획구간</span></li>
     </ul>
     </div>
   </aside>
@@ -8604,7 +8603,7 @@
 
         <div class="status-style-settings">
           <div class="status-style-title">개설상태 표현</div>
-          <div class="style-section-note">미확장·미개설 각각 없음, 실선, 대시, 점선, 대시+점 조합을 자유롭게 선택할 수 있으며 시도와 농어촌도로에 함께 적용됩니다.</div>
+          <div class="style-section-note">농어촌도로는 개설=실선, 미개설=대시, 계획구간=닷으로 표시합니다.</div>
           <label class="status-style-row two-column">
             <span>미확장</span>
             <select id="unexpandedStyle">
@@ -12348,7 +12347,10 @@
 
         // 경주시 농어촌도로 개설상태 표현 고정:
         // 개설=실선, 미개설=대시, 계획=닷.
-        if (road.layerId === "rural" && road.statusKey === "UNOPENED") {
+        if (
+          road.layerId === "rural" &&
+          (road.statusKey === "UNOPENED" || road.statusKey === "UNEXPANDED")
+        ) {
           requestedStyle = "dash";
         } else if (road.layerId === "rural" && road.statusKey === "PLAN") {
           requestedStyle = "dot";
@@ -13168,7 +13170,7 @@
       }
 
       function renderStatusDetail(body) {
-        renderEditorBackbar(body, '개설상태 표현', '미확장·미개설 노선의 선 모양을 조정합니다.');
+        renderEditorBackbar(body, '개설상태 표현', '미개설·계획구간 노선의 선 모양을 조정합니다.');
         const card = document.createElement('section');
         card.className = 'layer-detail-card';
         card.innerHTML =
@@ -15808,7 +15810,7 @@
           strokeColor: style.color,
           strokeOpacity: style.topOpacity / 100,
           strokeStyle:
-            layerId === "rural" && statusKey === "UNOPENED"
+            layerId === "rural" && (statusKey === "UNOPENED" || statusKey === "UNEXPANDED")
               ? "dash"
               : (layerId === "rural" && statusKey === "PLAN"
                   ? "dot"
@@ -16502,11 +16504,13 @@
           ? formatRoadLength
           : formatRoadLengthKm;
 
+        const unopenedTotal =
+          (totals.UNOPENED || 0) + (totals.UNEXPANDED || 0);
+
         return [
           totals.NORMAL ? "개설 " + formatLength(totals.NORMAL) + unit : "",
-          totals.UNEXPANDED ? "미확장 " + formatLength(totals.UNEXPANDED) + unit : "",
-          totals.UNOPENED ? "미개설 " + formatLength(totals.UNOPENED) + unit : "",
-          totals.PLAN ? "계획 " + formatLength(totals.PLAN) + unit : ""
+          unopenedTotal ? "미개설 " + formatLength(unopenedTotal) + unit : "",
+          totals.PLAN ? "계획구간 " + formatLength(totals.PLAN) + unit : ""
         ].filter(Boolean).join(" · ") || "-";
       }
 
@@ -17182,8 +17186,8 @@
 
       function statusValueFromKey(statusKey) {
         if (statusKey === "UNOPENED") return "미개설";
-        if (statusKey === "UNEXPANDED") return "미확장";
-        if (statusKey === "PLAN") return "계획";
+        if (statusKey === "UNEXPANDED") return "미개설";
+        if (statusKey === "PLAN") return "계획구간";
         return "개설";
       }
 
@@ -20873,7 +20877,7 @@
           popupEditRow("기점", "start", safe(props["기점"]) === "-" ? "" : props["기점"], "text") +
           popupEditRow("종점", "end", safe(props["종점"]) === "-" ? "" : props["종점"], "text") +
           popupEditRow("노선상태", "status", statusValueFromKey(currentStatus), "select",
-            ["개설", "미확장", "미개설", "계획"]) +
+            ["개설", "미개설", "계획구간"]) +
         '</form>';
       }
 
@@ -21302,15 +21306,15 @@
           ""
         ).trim();
         if (status.includes("미개설")) return "UNOPENED";
-        if (status.includes("미확장")) return "UNEXPANDED";
+        if (status.includes("미확장")) return "UNOPENED";
         if (status.includes("계획")) return "PLAN";
         return "NORMAL";
       }
 
       function roadStatusLabel(statusKey) {
         if (statusKey === "UNOPENED") return "미개설";
-        if (statusKey === "UNEXPANDED") return "미확장";
-        if (statusKey === "PLAN") return "계획";
+        if (statusKey === "UNEXPANDED") return "미개설";
+        if (statusKey === "PLAN") return "계획구간";
         return "개설";
       }
 
