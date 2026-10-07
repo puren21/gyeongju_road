@@ -7779,6 +7779,120 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 라인편집 카드 / 상단 저장 버튼 정리 ===== */
+  .road-popup .road-inline-line-edit-section {
+    margin: 0 0 10px !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    background: #ececee !important;
+    box-shadow: 0 0 0 .5px rgba(60,60,67,.10) !important;
+  }
+
+  .road-popup .road-inline-line-edit-open {
+    min-height: 52px !important;
+    padding: 0 14px !important;
+    border: 0 !important;
+    background: #ececee !important;
+    color: #1c1c1e !important;
+    font-size: 16px !important;
+    font-weight: 400 !important;
+  }
+
+  .road-popup .road-inline-line-edit-open:active {
+    background: #e2e2e5 !important;
+  }
+
+  .road-popup .road-inline-line-edit-chevron {
+    color: #c7c7cc !important;
+    font-size: 28px !important;
+    font-weight: 300 !important;
+  }
+
+  .road-popup .popup-title-tools .road-save-inline {
+    position: static !important;
+    width: auto !important;
+    min-width: 112px !important;
+    height: 27px !important;
+    margin: 0 !important;
+    display: grid !important;
+    grid-template-columns: 58px 42px !important;
+    align-items: center !important;
+    justify-content: end !important;
+    column-gap: 7px !important;
+    white-space: nowrap !important;
+    pointer-events: auto !important;
+  }
+
+  .road-popup .popup-title-tools .road-save-label {
+    color: #636366 !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+    text-align: right !important;
+  }
+
+  .road-popup .road-edit-save-btn {
+    width: 42px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: #e5e5ea !important;
+    color: #1c1c1e !important;
+    font-size: 10.5px !important;
+    font-weight: 700 !important;
+    line-height: 24px !important;
+    cursor: pointer !important;
+  }
+
+  .road-popup .road-edit-save-btn:active {
+    background: #d1d1d6 !important;
+  }
+
+  .road-popup .road-edit-save-btn:disabled {
+    opacity: .6 !important;
+    cursor: default !important;
+  }
+
+  /* 저장행 추가에 맞춰 상단 높이 확보 */
+  .road-popup .popup-header {
+    min-height: 116px !important;
+  }
+
+  .road-popup .popup-title-line {
+    min-height: 80px !important;
+  }
+
+  @media (max-width:700px) {
+    .road-popup .popup-title-tools .road-save-inline {
+      min-width: 105px !important;
+      height: 25px !important;
+      grid-template-columns: 55px 40px !important;
+      column-gap: 6px !important;
+    }
+
+    .road-popup .popup-title-tools .road-save-label {
+      font-size: 12px !important;
+    }
+
+    .road-popup .road-edit-save-btn {
+      width: 40px !important;
+      height: 23px !important;
+      line-height: 23px !important;
+      font-size: 10px !important;
+    }
+
+    .road-popup .popup-header {
+      min-height: 110px !important;
+    }
+
+    .road-popup .popup-title-line {
+      min-height: 76px !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -15851,6 +15965,34 @@
         return;
       }
 
+      function restoreInlineRoadEditPopup(groupKey, preferredRoad) {
+        const group = groups.get(groupKey);
+        if (!group || roadEditSessionGroupKey !== groupKey) return;
+
+        const road =
+          preferredRoad ||
+          getEditableRoad(groupKey) ||
+          group.roads[0] ||
+          null;
+
+        if (!road) return;
+
+        setSelectedRoadSegment(
+          group,
+          road,
+          getRoadMidpointPosition(road) ||
+            (selectedRoadPopupState && selectedRoadPopupState.anchorPosition)
+        );
+
+        const existingPopup = document.querySelector("body > .road-popup");
+        if (existingPopup) existingPopup.remove();
+
+        createFixedRoadPopup(groupPopup(group, road));
+        syncRoadPopupEditToggle(groupKey, true);
+        bindInlineRoadEditForm(groupKey);
+        setRoadGroupHighlight(groupKey, true);
+      }
+
       function bindInlineRoadEditForm(groupKey) {
         const popup = document.querySelector("body > .road-popup");
         if (!popup) return;
@@ -18048,10 +18190,14 @@
             );
             setRoadGroupHighlight(group.key, true);
 
-            const existingPopup = document.querySelector("body > .road-popup");
-            if (existingPopup) existingPopup.remove();
-            createFixedRoadPopup(groupPopup(group, road));
-            syncRoadPopupEditToggle(group.key, keepEditing);
+            if (keepEditing) {
+              restoreInlineRoadEditPopup(group.key, road);
+            } else {
+              const existingPopup = document.querySelector("body > .road-popup");
+              if (existingPopup) existingPopup.remove();
+              createFixedRoadPopup(groupPopup(group, road));
+              syncRoadPopupEditToggle(group.key, false);
+            }
           }
 
           return true;
@@ -18072,13 +18218,19 @@
       window.saveRoadGeometryEdit = saveRoadGeometryEdit;
 
       function cancelRoadGeometryEdit() {
+        const state = roadGeometryEditState;
+        const groupKey = roadEditSessionGroupKey || (state && state.groupKey);
+        const road = state && state.road;
+
         clearRoadGeometryEdit(false);
-        const groupKey = roadEditSessionGroupKey;
-        roadEditSessionGroupKey = null;
-        closeRoadEditPanel(true);
+
         if (groupKey) {
-          syncRoadPopupEditToggle(groupKey, false);
+          roadEditSessionGroupKey = groupKey;
+          document.body.classList.add("road-edit-session-active");
+          syncRoadPopupEditToggle(groupKey, true);
+          restoreInlineRoadEditPopup(groupKey, road || getEditableRoad(groupKey));
         }
+
         if (selectedRoadGroupKey) {
           setRoadGroupHighlight(selectedRoadGroupKey, true);
           updateSelectedRouteBalloon();
@@ -18213,6 +18365,32 @@
               // 저장하지 않은 변경이 있으면 저장 여부를 확인한 뒤 종료함.
               this.checked = true;
               requestRoadEditSessionOff(groupKey);
+            }
+          };
+        }
+
+        const topSaveBtn = popup.querySelector(".road-edit-save-btn");
+        if (topSaveBtn) {
+          topSaveBtn.onclick = async function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const groupKey = decodeURIComponent(this.dataset.groupKey || "");
+            if (!groupKey) return;
+
+            const originalText = this.textContent;
+            this.disabled = true;
+            this.textContent = "저장 중";
+
+            try {
+              await saveCurrentRoadEditSession(groupKey);
+            } finally {
+              if (document.body.contains(this)) {
+                this.disabled = false;
+                if (this.textContent === "저장 중") {
+                  this.textContent = originalText || "저장";
+                }
+              }
             }
           };
         }
@@ -18674,12 +18852,58 @@
         '</span>';
       }
 
+      function roadPopupHeaderSaveButton(group) {
+        if (roadEditSessionGroupKey !== group.key) return "";
+        const encodedKey = encodeURIComponent(group.key);
+
+        return '<span class="road-save-inline">' +
+          '<span class="road-save-label">저장</span>' +
+          '<button type="button" class="road-edit-save-btn" data-group-key="' +
+            encodedKey + '">저장</button>' +
+        '</span>';
+      }
+
       function roadPopupTitleTools(group) {
         return '<div class="popup-title-tools">' +
           roadPopupVisibilityToggle(group) +
           roadPopupHeaderEditButton(group) +
+          roadPopupHeaderSaveButton(group) +
         '</div>';
       }
+
+      async function saveCurrentRoadEditSession(groupKey) {
+        if (!groupKey || roadEditSaving) return false;
+
+        const group = groups.get(groupKey);
+        if (!group) return false;
+
+        let saved = false;
+
+        if (
+          roadGeometryEditState &&
+          roadGeometryEditState.groupKey === groupKey
+        ) {
+          saved = await saveRoadGeometryEdit({ keepEditing: true });
+        } else {
+          saved = await saveRoadAttributes(groupKey, { keepEditing: true });
+        }
+
+        if (saved) {
+          syncRoadPopupEditToggle(groupKey, true);
+          const popup = document.querySelector("body > .road-popup");
+          const saveBtn = popup && popup.querySelector(".road-edit-save-btn");
+          if (saveBtn) {
+            saveBtn.textContent = "저장됨";
+            setTimeout(function() {
+              if (document.body.contains(saveBtn)) saveBtn.textContent = "저장";
+            }, 900);
+          }
+        }
+
+        return saved;
+      }
+
+      window.saveCurrentRoadEditSession = saveCurrentRoadEditSession;
 
       function syncRoadPopupEditToggle(groupKey, enabled) {
         const popup = document.querySelector("body > .road-popup");
