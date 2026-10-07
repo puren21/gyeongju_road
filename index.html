@@ -8949,6 +8949,45 @@
     }
   }
 
+
+  /* ===== 2026-10-07: 도로폭 측정 결과 숫자 + 복사 버튼 ===== */
+  .road-width-result-label {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    min-width: 0 !important;
+    padding: 6px 8px !important;
+    white-space: nowrap !important;
+    pointer-events: auto !important;
+  }
+
+  .road-width-result-label strong {
+    display: inline-block !important;
+    margin: 0 !important;
+    color: #e21b1b !important;
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+  }
+
+  .road-width-copy-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #d7dce2;
+    border-radius: 6px;
+    background: #fff;
+    color: #505861;
+    font-size: 14px;
+    line-height: 26px;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .road-width-copy-btn:hover {
+    background: #f3f5f7;
+  }
+
 </style>
 
 </head>
@@ -10193,6 +10232,7 @@
       }
 
       function showParcelContextMenu(position) {
+        if (roadWidthMeasureMode) return;
         if (!position || measureMode) return;
 
         closeParcelContextMenu();
@@ -11013,7 +11053,15 @@
       let measureMousePosition = null;
 
       /* 실폭도로를 이용한 1점 도로폭 측정 */
+
       let roadWidthMeasureMode = false;
+
+      document.addEventListener("contextmenu", function(event) {
+        if (!roadWidthMeasureMode) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        stopRoadWidthMeasure();
+      }, true);
       let roadWidthIndex = null;
       let roadWidthIndexPromise = null;
       const roadWidthTileCache = new Map();
@@ -11427,18 +11475,65 @@
           }));
         });
 
+        const widthText = candidate.width.toFixed(1);
+
         roadWidthMeasureLabel = new kakao.maps.CustomOverlay({
           map: map,
           position: middle,
           content:
             '<div class="road-width-result-label">' +
-              '<span>실폭도로 기준</span>' +
-              '<strong>' + candidate.width.toFixed(2) + ' m</strong>' +
+              '<strong>' + widthText + ' m</strong>' +
+              '<button type="button" class="road-width-copy-btn" data-road-width-copy="' + widthText + '" title="숫자만 복사" aria-label="도로폭 숫자 복사">⧉</button>' +
             '</div>',
           xAnchor: 0.5,
           yAnchor: 1.35,
           zIndex: 192
         });
+
+        setTimeout(function() {
+          const copyButton = document.querySelector('.road-width-copy-btn[data-road-width-copy="' + widthText + '"]');
+          if (!copyButton || copyButton.dataset.bound === "1") return;
+          copyButton.dataset.bound = "1";
+
+          copyButton.addEventListener("click", function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const value = copyButton.getAttribute("data-road-width-copy") || "";
+
+            function showCopied() {
+              const oldText = copyButton.textContent;
+              copyButton.textContent = "✓";
+              setTimeout(function() {
+                copyButton.textContent = oldText;
+              }, 900);
+            }
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(value).then(showCopied).catch(function() {
+                const input = document.createElement("textarea");
+                input.value = value;
+                input.style.position = "fixed";
+                input.style.opacity = "0";
+                document.body.appendChild(input);
+                input.select();
+                try { document.execCommand("copy"); } catch (e) {}
+                input.remove();
+                showCopied();
+              });
+            } else {
+              const input = document.createElement("textarea");
+              input.value = value;
+              input.style.position = "fixed";
+              input.style.opacity = "0";
+              document.body.appendChild(input);
+              input.select();
+              try { document.execCommand("copy"); } catch (e) {}
+              input.remove();
+              showCopied();
+            }
+          });
+        }, 0);
       }
 
       async function measureRoadWidthAt(position, road) {
