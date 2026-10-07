@@ -19894,39 +19894,96 @@
         refreshRoadGroupJoinLines(state.group);
       }
 
-      function getRoadGeometryDragPosition(marker) {
+      let roadGeometryPointerClientX = null;
+      let roadGeometryPointerClientY = null;
+
+      function trackRoadGeometryPointer(event) {
+        if (!event) return;
+        if (Number.isFinite(event.clientX)) {
+          roadGeometryPointerClientX = event.clientX;
+        }
+        if (Number.isFinite(event.clientY)) {
+          roadGeometryPointerClientY = event.clientY;
+        }
+      }
+
+      window.addEventListener("pointermove", trackRoadGeometryPointer, { passive: true });
+      window.addEventListener("mousemove", trackRoadGeometryPointer, { passive: true });
+      window.addEventListener("pointerup", trackRoadGeometryPointer, { passive: true });
+      window.addEventListener("mouseup", trackRoadGeometryPointer, { passive: true });
+
+      function beginRoadGeometrySkyDrag(originPosition) {
+        if (!isSkyExtraZoomActive() || !originPosition) return null;
+
+        const projection = map && map.getProjection
+          ? map.getProjection()
+          : null;
+
+        if (
+          !projection ||
+          !Number.isFinite(roadGeometryPointerClientX) ||
+          !Number.isFinite(roadGeometryPointerClientY)
+        ) {
+          return null;
+        }
+
+        try {
+          const startPoint =
+            projection.containerPointFromCoords(originPosition);
+
+          if (!startPoint) return null;
+
+          return {
+            startClientX: roadGeometryPointerClientX,
+            startClientY: roadGeometryPointerClientY,
+            startPoint: startPoint
+          };
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function getRoadGeometryDragPosition(marker, skyDragState) {
         if (!marker) return null;
 
         const nativePosition = marker.getPosition();
 
-        // 일반 지도/일반 확대에서는 Kakao Marker 좌표를 그대로 사용함.
-        if (!isSkyExtraZoomActive() || !nativePosition) {
+        // 일반 지도/일반 확대에서는 Kakao 기본 drag 좌표 사용.
+        if (!isSkyExtraZoomActive() || !skyDragState) {
           return nativePosition;
         }
 
-        const projection = map && map.getProjection ? map.getProjection() : null;
-        if (!projection) return nativePosition;
+        const projection = map && map.getProjection
+          ? map.getProjection()
+          : null;
+
+        if (
+          !projection ||
+          !Number.isFinite(roadGeometryPointerClientX) ||
+          !Number.isFinite(roadGeometryPointerClientY)
+        ) {
+          return nativePosition;
+        }
 
         try {
-          // CSS scale(2) 상태에서는 Kakao의 기본 marker drag가
-          // 화면 이동량을 약 2배의 지도 좌표 이동으로 해석함.
-          // Kakao가 계산한 현재 marker 좌표를 container point로 바꾼 뒤,
-          // 지도 중심으로부터의 이동량을 1/2로 역보정한다.
-          const nativePoint = projection.containerPointFromCoords(nativePosition);
-          const centerPosition = map.getCenter();
-          const centerPoint = projection.containerPointFromCoords(centerPosition);
-
-          if (!nativePoint || !centerPoint) return nativePosition;
+          // 화면이 CSS scale(2) 되어 있으므로 실제 지도 좌표상 이동량은
+          // 마우스 화면 이동량의 정확히 1/2임.
+          // 현재 marker 위치를 다시 보정하지 않고 drag 시작점과
+          // 마우스 이동량만 사용하여 누적 오차/튀는 현상을 방지함.
+          const dx =
+            (roadGeometryPointerClientX - skyDragState.startClientX) / 2;
+          const dy =
+            (roadGeometryPointerClientY - skyDragState.startClientY) / 2;
 
           const correctedPoint = new kakao.maps.Point(
-            centerPoint.x + (nativePoint.x - centerPoint.x) / 2,
-            centerPoint.y + (nativePoint.y - centerPoint.y) / 2
+            skyDragState.startPoint.x + dx,
+            skyDragState.startPoint.y + dy
           );
 
-          const correctedPosition =
-            projection.coordsFromContainerPoint(correctedPoint);
-
-          return correctedPosition || nativePosition;
+          return (
+            projection.coordsFromContainerPoint(correctedPoint) ||
+            nativePosition
+          );
         } catch (e) {
           return nativePosition;
         }
@@ -19943,6 +20000,8 @@
         const markerImage = createSimpleVertexMarkerImage();
 
         state.workingPath.forEach(function(position, index) {
+          let skyDragState = null;
+
           const marker = new kakao.maps.Marker({
             map: map,
             position: position,
@@ -19963,6 +20022,7 @@
             map.setCursor("move");
 
             const originPosition = state.workingPath[index];
+            skyDragState = beginRoadGeometrySkyDrag(originPosition);
 
             // 분할로 생성된 공통 끝점이면 인접 구간의 연결 끝점도 함께 이동.
             state.activeConnectedEndpoints =
@@ -20006,7 +20066,7 @@
           });
 
           kakao.maps.event.addListener(marker, "drag", function() {
-            const position = getRoadGeometryDragPosition(marker);
+            const position = getRoadGeometryDragPosition(marker, skyDragState);
             if (!position) return;
 
             if (isSkyExtraZoomActive()) {
@@ -20026,7 +20086,7 @@
           });
 
           kakao.maps.event.addListener(marker, "dragend", function() {
-            const position = getRoadGeometryDragPosition(marker);
+            const position = getRoadGeometryDragPosition(marker, skyDragState);
             if (!position) return;
 
             if (isSkyExtraZoomActive()) {
@@ -20045,6 +20105,7 @@
             refreshRoadGroupJoinLines(state.group);
 
             state.activeConnectedEndpoints = [];
+            skyDragState = null;
             setRoadEditDirty(true);
             recalcGroupBounds(state.group);
             map.setCursor("move");
