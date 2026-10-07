@@ -20034,6 +20034,19 @@
         createFixedRoadPopup(groupPopup(group, currentRoad));
         syncRoadPopupEditToggle(groupKey, true);
         bindInlineRoadEditForm(groupKey);
+
+        // 상단 '편집' 스위치를 켜는 순간 속성편집 + 라인편집을 함께 시작함.
+        // 별도의 '라인편집' 메뉴는 사용하지 않음.
+        if (!roadGeometryEditState) {
+          setTimeout(function() {
+            if (
+              roadEditSessionGroupKey === groupKey &&
+              !roadGeometryEditState
+            ) {
+              startRoadGeometryEdit(groupKey);
+            }
+          }, 0);
+        }
       }
 
       window.openRoadEditor = openRoadEditor;
@@ -23907,6 +23920,19 @@
           selectedRoadPopupState.groupKey === roadEditSessionGroupKey
         ) {
           bindInlineRoadEditForm(roadEditSessionGroupKey);
+
+          // 편집 세션 중 팝업이 재생성되어도 라인편집을 계속 유지함.
+          if (!roadGeometryEditState) {
+            const activeGroupKey = roadEditSessionGroupKey;
+            setTimeout(function() {
+              if (
+                roadEditSessionGroupKey === activeGroupKey &&
+                !roadGeometryEditState
+              ) {
+                startRoadGeometryEdit(activeGroupKey);
+              }
+            }, 0);
+          }
         }
 
         return popup;
@@ -24458,12 +24484,12 @@
           roadGeometryEditState &&
           roadGeometryEditState.groupKey === groupKey
         ) {
-          // 현재 선형편집 중인 라인은 먼저 메모리에 반영/저장한 뒤
-          // 전체 노선 세션 저장으로 이어감.
+          // 편집 아래의 저장 버튼 하나로 현재 라인 geometry를 먼저 저장함.
           saved = await saveRoadGeometryEdit({ keepEditing: true });
           if (!saved) return false;
         }
 
+        // 이어서 같은 저장 동작에서 속성값 + 전체 segmentModel도 함께 저장함.
         saved = await saveAllRoadEditSessionChanges(
           groupKey,
           { keepEditing: true }
