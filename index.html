@@ -19818,8 +19818,20 @@
 
       function updateRuralRoadStatusField(form) {
         if (!form) return "";
+
+        const gubun = form.querySelector('[name="gubun"]');
+        const lane = form.querySelector('[name="laneSelected"]');
+        const width = form.querySelector('[name="widthSelected"]');
         const status = form.querySelector('[name="status"]');
-        return status ? status.value : "";
+
+        const value = classifyRuralRoadStatus(
+          gubun ? gubun.value : "",
+          lane ? lane.value : "",
+          width ? width.value : ""
+        );
+
+        if (status) status.value = value;
+        return value;
       }
 
       function buildRoadEditField(label, name, value, type, options, readOnly) {
@@ -20094,10 +20106,14 @@
           values.length = formatRoadDataLengthKm(roadGeometryLengthKm(road));
           values.start = data.get("start") || "";
           values.end = data.get("end") || "";
-          values.status = data.get("status") || roadStatusLabel(getRoadStatusKey(road.properties, "rural"));
+          const gubun = data.get("gubun") || getRoadGroupTypeLabel(group);
+          values.status = classifyRuralRoadStatus(
+            gubun,
+            values.lane,
+            values.width
+          );
           values.specialNote = data.get("specialNote") || "";
 
-          const gubun = data.get("gubun") || getRoadGroupTypeLabel(group);
           if (gubun) {
             // 구분은 동일 노선 전체에 적용.
             group.propertiesList.forEach(function(p) {
@@ -21204,7 +21220,11 @@
           values.length = formatRoadDataLengthKm(roadGeometryLengthKm(road));
           values.start = data.get("start") || "";
           values.end = data.get("end") || "";
-          values.status = data.get("status") || roadStatusLabel(getRoadStatusKey(road.properties, "rural"));
+          values.status = classifyRuralRoadStatus(
+            data.get("gubun") || getRoadGroupTypeLabel(group),
+            values.lane,
+            values.width
+          );
           values.specialNote = data.get("specialNote") || "";
         }
 
@@ -23485,10 +23505,14 @@
             attributeValues.length = formatRoadDataLengthKm(roadGeometryLengthKm(road));
             attributeValues.start = editData.get("start") || "";
             attributeValues.end = editData.get("end") || "";
-            attributeValues.status = editData.get("status") || roadStatusLabel(getRoadStatusKey(road.properties, "rural"));
+            const gubun = editData.get("gubun") || getRoadGroupTypeLabel(group);
+            attributeValues.status = classifyRuralRoadStatus(
+              gubun,
+              attributeValues.lane,
+              attributeValues.width
+            );
             attributeValues.specialNote = editData.get("specialNote") || "";
 
-            const gubun = editData.get("gubun") || getRoadGroupTypeLabel(group);
             if (gubun) {
               setPropertyValue(road.properties, ["GUBUN","구분"], "GUBUN", gubun);
             }
@@ -24875,9 +24899,14 @@
           popupEditRow(
             "개설여부",
             "status",
-            roadStatusLabel(getRoadStatusKey(props, "rural")),
-            "select",
-            ["개설", "미개설", "계획구간"]
+            classifyRuralRoadStatus(
+              String(props.GUBUN || props["구분"] || getRoadGroupTypeLabel(group)),
+              safe(props["차선"]) === "-" ? "" : props["차선"],
+              safe(props["도로폭"]) === "-" ? "" : props["도로폭"]
+            ),
+            "text",
+            null,
+            true
           ) +
         '</form>';
       }
@@ -25712,23 +25741,6 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return "NORMAL";
         }
 
-        const explicitStatus = String(
-          properties["개설여부"] ??
-          properties["기타"] ??
-          properties.Opened ??
-          properties.Opend ??
-          ""
-        ).trim();
-
-        if (explicitStatus.includes("계획")) return "PLAN";
-        if (explicitStatus.includes("미개설") || explicitStatus.includes("미포장")) {
-          return "UNOPENED";
-        }
-        if (explicitStatus === "개설" || explicitStatus === "포장") {
-          return "NORMAL";
-        }
-
-        // Legacy fallback only when the GeoJSON has no explicit status.
         const gubun =
           properties["구분"] ||
           properties.GUBUN ||
@@ -25750,6 +25762,7 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           "";
 
         const autoStatus = classifyRuralRoadStatus(gubun, lane, width);
+
         if (autoStatus === "미개설") return "UNOPENED";
         if (autoStatus === "계획구간") return "PLAN";
         return "NORMAL";
@@ -25758,50 +25771,33 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
       function normalizeRuralRoadAutoStatus(properties) {
         if (!properties) return "계획구간";
 
-        if (
-          (properties["개설여부"] === undefined ||
-           properties["개설여부"] === null ||
-           String(properties["개설여부"]).trim() === "") &&
-          properties["기타"] !== undefined
-        ) {
-          properties["개설여부"] = properties["기타"];
-        }
-
         delete properties["기타"];
         delete properties["포장"];
         delete properties["미포장"];
 
-        let status = String(properties["개설여부"] || "").trim();
+        const gubun =
+          properties["구분"] ||
+          properties.GUBUN ||
+          properties.gubun ||
+          "";
 
-        if (!status) {
-          const gubun =
-            properties["구분"] ||
-            properties.GUBUN ||
-            properties.gubun ||
-            "";
+        const lane =
+          properties["차선"] ??
+          properties["차선현황"] ??
+          properties.lane ??
+          properties.LANE ??
+          "";
 
-          const lane =
-            properties["차선"] ??
-            properties["차선현황"] ??
-            properties.lane ??
-            properties.LANE ??
-            "";
+        const width =
+          properties["도로폭"] ??
+          properties["폭원"] ??
+          properties.width ??
+          properties.WIDTH ??
+          "";
 
-          const width =
-            properties["도로폭"] ??
-            properties["폭원"] ??
-            properties.width ??
-            properties.WIDTH ??
-            "";
-
-          status = classifyRuralRoadStatus(gubun, lane, width);
-        }
-
-        if (status.includes("계획")) status = "계획구간";
-        else if (status.includes("미개설") || status.includes("미포장")) status = "미개설";
-        else status = "개설";
-
+        const status = classifyRuralRoadStatus(gubun, lane, width);
         properties["개설여부"] = status;
+
         return status;
       }
 
@@ -25907,6 +25903,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
 
           const props = road.properties;
           normalizeRuralRoadAutoStatus(props);
+          road.statusKey = getRoadStatusKey(props, "rural");
+          road.styleKey = getStyleKey(props, "rural");
 
           const path =
             (group.paths && group.paths[index]) ||
