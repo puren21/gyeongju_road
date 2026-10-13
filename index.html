@@ -9534,6 +9534,38 @@
     }
   }
 
+
+  /* ===== 2026-10-13: 좌상단 메뉴 화면 하단까지 확장 ===== */
+  @media (min-width:701px) {
+    #listPanel {
+      top: 0 !important;
+      bottom: auto !important;
+      height: 125vh !important; /* zoom:0.8 보정 → 실제 화면 높이 100% */
+      min-height: 125vh !important;
+      max-height: 125vh !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+
+    #listPanel .road-main-menu-home,
+    #listPanel .road-menu-page.active {
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+    }
+
+    #listPanel .road-menu-page.active {
+      overflow: hidden !important;
+    }
+
+    #listPanel #listContent,
+    #listPanel .road-menu-memo-list,
+    #listPanel .road-menu-page.active > .road-menu-page-scroll {
+      min-height: 0 !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -25186,6 +25218,31 @@
 
       window.restoreEmbeddedRoadviewAfterPopup = restoreEmbeddedRoadviewAfterPopup;
 
+      function closeRoadviewPopupWindow() {
+        const popup = roadviewPopupWindow;
+
+        if (roadviewPopupWatchTimer) {
+          clearInterval(roadviewPopupWatchTimer);
+          roadviewPopupWatchTimer = null;
+        }
+
+        // 참조를 먼저 비워 중복 close/restore 호출을 방지함.
+        roadviewPopupWindow = null;
+
+        if (popup && !popup.closed) {
+          try { popup.close(); } catch (e) {}
+        }
+
+        if (roadviewMode) {
+          showEmbeddedRoadview();
+          setTimeout(function() {
+            if (roadview) roadview.relayout();
+          }, 0);
+        }
+      }
+
+      window.closeRoadviewPopupWindow = closeRoadviewPopupWindow;
+
       function watchRoadviewPopupClose() {
         if (roadviewPopupWatchTimer) {
           clearInterval(roadviewPopupWatchTimer);
@@ -25431,10 +25488,28 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
     } catch (e) {}
   }
 
-  document.getElementById("closeBtn").onclick = function(){
-    notifyOpenerClosed();
-    window.close();
-  };
+  document.getElementById("closeBtn").addEventListener("click", function(event){
+    event.preventDefault();
+    event.stopPropagation();
+
+    var requestedParentClose = false;
+
+    try {
+      if (
+        window.opener &&
+        !window.opener.closed &&
+        typeof window.opener.closeRoadviewPopupWindow === "function"
+      ) {
+        requestedParentClose = true;
+        window.opener.closeRoadviewPopupWindow();
+      }
+    } catch (e) {}
+
+    if (!requestedParentClose) {
+      notifyOpenerClosed();
+      try { window.close(); } catch (e) {}
+    }
+  });
 
   window.addEventListener("beforeunload", notifyOpenerClosed);
 
@@ -25575,9 +25650,10 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
         }
 
         if (roadviewPopupWindow && !roadviewPopupWindow.closed) {
-          try { roadviewPopupWindow.close(); } catch (e) {}
+          closeRoadviewPopupWindow();
+        } else {
+          roadviewPopupWindow = null;
         }
-        roadviewPopupWindow = null;
 
         closeRoadviewPanel();
         fullscreenBtn.textContent = "팝업으로 열기";
