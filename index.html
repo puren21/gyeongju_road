@@ -9635,6 +9635,33 @@
     }
   }
 
+
+  /* ===== 2026-10-13: 좌측 메뉴 zoom 보정 + 화면 하단까지 드래그 ===== */
+  @media (min-width:701px) {
+    #listPanel {
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+    }
+
+    #listPanel .road-menu-page.active,
+    #listPanel .road-main-menu-home {
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+    }
+
+    #listPanel #listContent,
+    #listPanel .road-menu-memo-list,
+    #listPanel #roadLayerUnifiedScroll {
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow-y: auto !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -16100,28 +16127,63 @@
       let listResizeActive = false;
       let listHeightUserAdjusted = false;
 
+      function getListPanelVisualScale() {
+        const style = window.getComputedStyle(listPanel);
+
+        // 현재 좌측 메뉴에는 데스크톱에서 축소(zoom)가 적용되어 있으므로
+        // CSS 높이와 실제 화면에 보이는 높이가 다름.
+        const zoom = Number.parseFloat(style.zoom);
+        if (Number.isFinite(zoom) && zoom > 0) {
+          return zoom;
+        }
+
+        // transform: scale() 등을 쓰는 경우를 위한 보조 계산.
+        const rect = listPanel.getBoundingClientRect();
+        const offsetHeight = listPanel.offsetHeight;
+        if (offsetHeight > 0 && rect.height > 0) {
+          const ratio = rect.height / offsetHeight;
+          if (Number.isFinite(ratio) && ratio > 0) {
+            return ratio;
+          }
+        }
+
+        return 1;
+      }
+
       function clampListHeight(height) {
+        // height는 "화면에서 실제 보이는 높이(px)" 기준으로 계산함.
         const minHeight = mobileListMedia.matches ? 190 : 260;
-        const topOffset = mobileListMedia.matches ? 0 : 8;
+        const rect = listPanel.getBoundingClientRect();
+        const top = mobileListMedia.matches ? 0 : Math.max(0, rect.top);
+        const bottomMargin = mobileListMedia.matches ? 0 : 8;
+
+        // 메뉴의 zoom이 0.8이어도 화면 하단까지 정확히 확장되도록
+        // 최대값은 실제 viewport 기준으로 제한함.
         const maxHeight = Math.max(
           minHeight,
-          window.innerHeight - topOffset - 8
+          window.innerHeight - top - bottomMargin
         );
+
         return Math.max(minHeight, Math.min(maxHeight, height));
       }
 
       function applyListHeight(height, remember, markUserAdjusted) {
-        const nextHeight = clampListHeight(height);
+        // 전달받은 height는 항상 실제 화면상 높이(visual px)임.
+        const nextVisualHeight = clampListHeight(height);
+        const scale = getListPanelVisualScale();
 
-        // 여러 기존 !important 높이 규칙보다 인라인 높이를 우선 적용함.
+        // CSS zoom/scale이 적용된 패널은 visual height / scale 만큼
+        // CSS 높이를 줘야 화면에서 요청 높이만큼 보임.
+        const cssHeight = nextVisualHeight / scale;
+
         listPanel.style.setProperty(
           "height",
-          Math.round(nextHeight) + "px",
+          Math.round(cssHeight) + "px",
           "important"
         );
         listPanel.style.setProperty(
           "max-height",
-          Math.round(nextHeight) + "px",
+          Math.round(cssHeight) + "px",
           "important"
         );
 
@@ -16131,9 +16193,10 @@
 
         if (remember !== false) {
           try {
+            // 저장값도 visual px로 통일함.
             localStorage.setItem(
               "roadListPanelHeight",
-              String(Math.round(nextHeight))
+              String(Math.round(nextVisualHeight))
             );
             if (markUserAdjusted) {
               localStorage.setItem("roadListPanelHeightUserAdjusted", "1");
@@ -16141,7 +16204,7 @@
           } catch (e) {}
         }
 
-        return nextHeight;
+        return nextVisualHeight;
       }
 
       function getRoadPopupReferenceHeight() {
@@ -16240,18 +16303,25 @@
           event.pointerId !== listResizePointerId
         ) return;
 
+        const clientY = Math.max(
+          0,
+          Math.min(window.innerHeight, Number(event.clientY) || 0)
+        );
+
         let nextHeight;
 
         if (isListBottomSheetMode()) {
           // 모바일 하단시트는 상단 손잡이를 위로 끌면 높이 증가.
           nextHeight =
             listResizeStartHeight +
-            (listResizeStartY - event.clientY);
+            (listResizeStartY - clientY);
         } else {
           // 데스크톱 좌측 패널은 하단 손잡이를 아래로 끌면 높이 증가.
+          // 패널에 zoom이 있어도 visual px 기준으로 계산하므로
+          // 화면 맨 아래까지 연속해서 확장 가능함.
           nextHeight =
             listResizeStartHeight +
-            (event.clientY - listResizeStartY);
+            (clientY - listResizeStartY);
         }
 
         applyListHeight(nextHeight, false, false);
