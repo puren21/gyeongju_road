@@ -9578,6 +9578,63 @@
     }
   }
 
+
+  /* ===== 2026-10-13: 좌측 메뉴 상하 높이 드래그 ===== */
+  @media (min-width:701px) {
+    #listPanel {
+      min-height: 260px !important;
+      overflow: hidden !important;
+    }
+
+    #listResizeHandle {
+      display: block !important;
+      position: absolute !important;
+      top: auto !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 26px !important;
+      cursor: ns-resize !important;
+      touch-action: none !important;
+      user-select: none !important;
+      background: transparent !important;
+      z-index: 80 !important;
+    }
+
+    #listResizeHandle::after {
+      content: "" !important;
+      position: absolute !important;
+      left: 50% !important;
+      bottom: 7px !important;
+      width: 54px !important;
+      height: 5px !important;
+      border-radius: 999px !important;
+      background: rgba(47,145,242,.72) !important;
+      transform: translateX(-50%) !important;
+      box-shadow: 0 1px 4px rgba(0,0,0,.16) !important;
+    }
+
+    #listPanel #listContent,
+    #listPanel .road-menu-page.active,
+    #listPanel .road-main-menu-home {
+      min-height: 0 !important;
+    }
+  }
+
+  @media (max-width:700px) {
+    #listResizeHandle {
+      display: block !important;
+      top: -18px !important;
+      right: 0 !important;
+      bottom: auto !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 36px !important;
+      cursor: ns-resize !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -16006,59 +16063,118 @@
         document.body.classList.add("list-collapsed");
       };
 
-      // 데스크톱은 폭, 모바일은 하단 패널 높이를 드래그로 조절합니다.
+      // 좌측 메뉴는 우측 도로속성창과 동일하게 상하 높이를 드래그로 조절함.
+      // 모바일은 상단 손잡이를 위로 끌수록 높이가 증가하고,
+      // 데스크톱은 하단 손잡이를 아래로 끌수록 높이가 증가함.
       let listResizePointerId = null;
-
-      function clampListWidth(width) {
-        const minWidth = 150;
-        const maxWidth = Math.min(480, Math.max(minWidth, window.innerWidth - 120));
-        return Math.max(minWidth, Math.min(maxWidth, width));
-      }
-
-      function applyListWidth(width) {
-        if (mobileListMedia.matches) return;
-        const nextWidth = clampListWidth(width);
-        listPanel.style.width = nextWidth + "px";
-        try {
-          localStorage.setItem("roadListPanelWidth", String(Math.round(nextWidth)));
-        } catch (e) {}
-      }
+      let listResizeStartY = 0;
+      let listResizeStartHeight = 0;
+      let listResizeActive = false;
+      let listHeightUserAdjusted = false;
 
       function clampListHeight(height) {
-        const minHeight = 190;
-        // 모바일 메뉴는 화면 맨 위까지 완전히 확장 가능하도록 함.
-        const maxHeight = Math.max(minHeight, window.innerHeight);
+        const minHeight = mobileListMedia.matches ? 190 : 260;
+        const topOffset = mobileListMedia.matches ? 0 : 8;
+        const maxHeight = Math.max(
+          minHeight,
+          window.innerHeight - topOffset - 8
+        );
         return Math.max(minHeight, Math.min(maxHeight, height));
       }
 
-      function applyListHeight(height) {
-        if (!mobileListMedia.matches) return;
+      function applyListHeight(height, remember, markUserAdjusted) {
         const nextHeight = clampListHeight(height);
-        listPanel.style.height = nextHeight + "px";
-        try {
-          localStorage.setItem("roadListPanelHeight", String(Math.round(nextHeight)));
-        } catch (e) {}
+
+        // 여러 기존 !important 높이 규칙보다 인라인 높이를 우선 적용함.
+        listPanel.style.setProperty(
+          "height",
+          Math.round(nextHeight) + "px",
+          "important"
+        );
+        listPanel.style.setProperty(
+          "max-height",
+          Math.round(nextHeight) + "px",
+          "important"
+        );
+
+        if (markUserAdjusted) {
+          listHeightUserAdjusted = true;
+        }
+
+        if (remember !== false) {
+          try {
+            localStorage.setItem(
+              "roadListPanelHeight",
+              String(Math.round(nextHeight))
+            );
+            if (markUserAdjusted) {
+              localStorage.setItem("roadListPanelHeightUserAdjusted", "1");
+            }
+          } catch (e) {}
+        }
+
+        return nextHeight;
       }
 
-      try {
-        if (mobileListMedia.matches) {
-          const savedListHeight = Number(localStorage.getItem("roadListPanelHeight"));
-          if (Number.isFinite(savedListHeight) && savedListHeight > 0) {
-            applyListHeight(savedListHeight);
-          }
-        } else {
-          const savedListWidth = Number(localStorage.getItem("roadListPanelWidth"));
-          if (Number.isFinite(savedListWidth) && savedListWidth > 0) {
-            applyListWidth(savedListWidth);
-          }
+      function getRoadPopupReferenceHeight() {
+        const popup = document.querySelector("body > .road-popup");
+        if (popup) {
+          const rect = popup.getBoundingClientRect();
+          if (rect && rect.height > 0) return rect.height;
         }
-      } catch (e) {}
 
-      let listResizeStartX = 0;
-      let listResizeStartY = 0;
-      let listResizeStartWidth = 0;
-      let listResizeStartHeight = 0;
-      let listResizeActive = false;
+        // 도로속성창이 아직 열리지 않은 초기화면의 기준 높이.
+        // 실제 도로속성창이 처음 열리면 아래 sync 함수에서 정확히 다시 맞춤.
+        return Math.min(
+          mobileListMedia.matches ? window.innerHeight * 0.38 : 520,
+          window.innerHeight - (mobileListMedia.matches ? 16 : 80)
+        );
+      }
+
+      function syncLeftMenuInitialHeightToRoadPopup(popup) {
+        if (listHeightUserAdjusted) return;
+
+        const target = popup || document.querySelector("body > .road-popup");
+        if (!target) return;
+
+        const rect = target.getBoundingClientRect();
+        if (!rect || rect.height <= 0) return;
+
+        applyListHeight(rect.height, false, false);
+      }
+
+      window.syncLeftMenuInitialHeightToRoadPopup =
+        syncLeftMenuInitialHeightToRoadPopup;
+
+      // 저장된 사용자의 높이가 있으면 그것을 사용하고,
+      // 없으면 우측 도로속성창의 기본 높이에 맞춘 초기값을 사용함.
+      try {
+        const savedHeight = Number(
+          localStorage.getItem("roadListPanelHeight")
+        );
+        listHeightUserAdjusted =
+          localStorage.getItem("roadListPanelHeightUserAdjusted") === "1";
+
+        if (
+          listHeightUserAdjusted &&
+          Number.isFinite(savedHeight) &&
+          savedHeight > 0
+        ) {
+          applyListHeight(savedHeight, false, false);
+        } else {
+          applyListHeight(
+            getRoadPopupReferenceHeight(),
+            false,
+            false
+          );
+        }
+      } catch (e) {
+        applyListHeight(
+          getRoadPopupReferenceHeight(),
+          false,
+          false
+        );
+      }
 
       function isListBottomSheetMode() {
         return !!mobileListMedia.matches;
@@ -16071,9 +16187,7 @@
         const rect = listPanel.getBoundingClientRect();
 
         listResizePointerId = event.pointerId;
-        listResizeStartX = event.clientX;
         listResizeStartY = event.clientY;
-        listResizeStartWidth = rect.width;
         listResizeStartHeight = rect.height;
         listResizeActive = true;
 
@@ -16098,17 +16212,24 @@
           event.pointerId !== listResizePointerId
         ) return;
 
+        let nextHeight;
+
         if (isListBottomSheetMode()) {
-          // 모바일 하단 시트: 위로 끌수록 높이 증가.
-          const deltaY = listResizeStartY - event.clientY;
-          applyListHeight(listResizeStartHeight + deltaY);
+          // 모바일 하단시트는 상단 손잡이를 위로 끌면 높이 증가.
+          nextHeight =
+            listResizeStartHeight +
+            (listResizeStartY - event.clientY);
         } else {
-          // 데스크톱/가로형: 오른쪽으로 끌수록 폭 증가.
-          const deltaX = event.clientX - listResizeStartX;
-          applyListWidth(listResizeStartWidth + deltaX);
+          // 데스크톱 좌측 패널은 하단 손잡이를 아래로 끌면 높이 증가.
+          nextHeight =
+            listResizeStartHeight +
+            (event.clientY - listResizeStartY);
         }
 
+        applyListHeight(nextHeight, false, false);
+
         event.preventDefault();
+        event.stopPropagation();
       }
 
       function finishListResize(event) {
@@ -16128,12 +16249,19 @@
         listResizeActive = false;
         listResizePointerId = null;
         document.body.classList.remove("list-resizing");
+
+        const rect = listPanel.getBoundingClientRect();
+        applyListHeight(rect.height, true, true);
       }
 
       listResizeHandle.addEventListener("pointerdown", beginListResize);
 
-      // 손잡이를 벗어나도 계속 확장되도록 window에서 이동/종료 이벤트를 받음.
-      window.addEventListener("pointermove", moveListResize, { passive: false });
+      // 손잡이를 벗어나도 계속 상하 조절되도록 window에서 이벤트를 받음.
+      window.addEventListener(
+        "pointermove",
+        moveListResize,
+        { passive: false }
+      );
       window.addEventListener("pointerup", finishListResize);
       window.addEventListener("pointercancel", finishListResize);
       window.addEventListener("blur", function() {
@@ -16142,17 +16270,11 @@
 
       window.addEventListener("resize", function () {
         updateListButtonSymbols();
-        if (mobileListMedia.matches) {
-          // 데스크톱에서 지정한 인라인 폭은 모바일 바텀시트에서 제거
-          listPanel.style.removeProperty("width");
-          const currentHeight = listPanel.getBoundingClientRect().height;
-          if (currentHeight) applyListHeight(currentHeight);
-        } else {
-          // 모바일에서 지정한 인라인 높이는 데스크톱 사이드바에서 제거
-          listPanel.style.removeProperty("height");
-          let savedListWidth = 0;
-          try { savedListWidth = Number(localStorage.getItem("roadListPanelWidth")); } catch (e) {}
-          applyListWidth(Number.isFinite(savedListWidth) && savedListWidth > 0 ? savedListWidth : 190);
+
+        // 화면 크기가 달라지면 현재 높이를 새 화면 범위 안으로 보정함.
+        const currentHeight = listPanel.getBoundingClientRect().height;
+        if (currentHeight) {
+          applyListHeight(currentHeight, false, false);
         }
       });
 
@@ -24249,6 +24371,15 @@
         syncMobileRoadInfoState(true);
 
         enableRoadPopupResize(popup);
+
+        // 사용자가 좌측 메뉴 높이를 직접 조절하기 전까지는
+        // 좌측 메뉴의 초기 높이를 우측 도로속성창 높이와 동일하게 맞춤.
+        if (typeof window.syncLeftMenuInitialHeightToRoadPopup === "function") {
+          requestAnimationFrame(function() {
+            window.syncLeftMenuInitialHeightToRoadPopup(popup);
+          });
+        }
+
         placeRoadPopupTopRight();
         keepRoadPopupInSafeViewport();
         enableRoadPopupDrag();
