@@ -19753,17 +19753,14 @@
                 ? highlightColor
                 : getRoadLayerDisplayColor(road.styleKey, config),
               strokeWeight: mapStrokePx(
-                enabled
-                  ? (Number(config.width) || 3) +
-                    (isSelectedSegment ? 3 : 2.5)
-                  : (
-                      road.statusKey === "UNOPENED"
-                        ? Math.max(
-                            Number(config.width) || 3,
-                            STATUS_STYLES.UNOPENED_SIZE
-                          )
-                        : Number(config.width) || 3
-                    ),
+                (
+                  road.statusKey === "UNOPENED"
+                    ? Math.max(
+                        Number(config.width) || 3,
+                        STATUS_STYLES.UNOPENED_SIZE
+                      )
+                    : Number(config.width) || 3
+                ),
                 1
               ),
               strokeOpacity: enabled
@@ -26330,7 +26327,9 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
             ? STATUS_STYLES.UNOPENED_SIZE
             : ROAD_STYLES[road.styleKey].mid;
 
-        return mapStrokePx(weight + (selected ? 2 : 0), 1);
+        // 선택 여부와 관계없이 현재 기본 라인 두께를 그대로 사용함.
+        // 선택 상태는 색상/레이어 순서로만 구분함.
+        return mapStrokePx(weight, 1);
       }
 
       function parseRoadLength(value) {
