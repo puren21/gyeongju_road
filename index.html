@@ -10880,6 +10880,11 @@
 
       function showParcelContextMenu(position) {
         if (roadWidthMeasureMode) return;
+
+        // 라인편집 세션 중에는 지번보기 메뉴를 절대 열지 않음.
+        // 편집 도구가 활성/비활성인지와 관계없이 라인편집을 종료하기 전까지 적용함.
+        if (roadGeometryEditState) return;
+
         if (!position || measureMode) return;
 
         closeParcelContextMenu();
@@ -10931,6 +10936,20 @@
           stopRoadWidthMeasure(true);
           return;
         }
+
+        // 라인편집 중 우클릭은 현재 편집 도구 종료 전용.
+        // 지번보기 메뉴는 라인편집 세션이 완전히 끝난 뒤에만 사용함.
+        if (roadGeometryEditState) {
+          if (roadGeometryEditState.toolActive) {
+            if (mouseEvent && mouseEvent.domEvent) {
+              mouseEvent.domEvent.preventDefault();
+              mouseEvent.domEvent.stopPropagation();
+            }
+            finishRoadGeometryToolWithoutSave(roadGeometryEditState);
+          }
+          return;
+        }
+
         if (measureMode) return;
         showParcelContextMenu(mouseEvent.latLng);
       });
@@ -12900,6 +12919,15 @@
       /* 지도 내부 객체 위에서도 우클릭 완료가 동작하고 기본 메뉴는 열리지 않게 합니다. */
       document.getElementById("map").addEventListener("contextmenu", function (event) {
         event.preventDefault();
+
+        if (roadGeometryEditState) {
+          event.stopPropagation();
+
+          if (roadGeometryEditState.toolActive) {
+            finishRoadGeometryToolWithoutSave(roadGeometryEditState);
+          }
+          return;
+        }
 
         if (measureMode) {
           event.stopPropagation();
@@ -23535,6 +23563,14 @@
       }
 
       function startRoadGeometryEdit(groupKey) {
+        // 라인편집 진입 시 기존 지번보기 메뉴/지번정보 팝업을 정리함.
+        try { closeParcelContextMenu(); } catch (e) {}
+        try {
+          if (parcelInfoPopupActive || basePlaceOverlay) {
+            closeBasePlacePopup();
+          }
+        } catch (e) {}
+
         const group = groups.get(groupKey);
         const road = getEditableRoad(groupKey);
         if (!group || !road) return;
