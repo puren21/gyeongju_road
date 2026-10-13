@@ -3357,7 +3357,7 @@
       max-width: none !important;
       height: 38dvh !important;
       min-height: 190px !important;
-      max-height: 76dvh !important;
+      max-height: 100dvh !important;
       display: flex !important;
       flex-direction: column !important;
       border-radius: 16px 16px 0 0 !important;
@@ -3542,8 +3542,8 @@
 
     /* 도로정보가 열리면 도로찾기 바텀시트는 자동 축소용 상태 */
     body.mobile-road-info-open #listPanel:not([style*="display: none"]) {
-      height: 25dvh !important;
       min-height: 150px !important;
+      max-height: 100dvh !important;
     }
 
     /* 둘이 겹치지 않도록 정보창이 열리면 도로찾기 패널은 아래로 밀기 */
@@ -9566,6 +9566,18 @@
     }
   }
 
+
+  /* ===== 2026-10-13: 모바일 좌측 메뉴 화면 끝까지 확장 ===== */
+  @media (max-width:700px) {
+    #listPanel {
+      max-height: 100dvh !important;
+    }
+
+    body.mobile-road-info-open #listPanel {
+      max-height: 100dvh !important;
+    }
+  }
+
 </style>
 
 </head>
@@ -11813,8 +11825,13 @@
         roadWidthBtn.classList.add("active");
         roadWidthHint.style.display = "flex";
         map.setCursor("crosshair");
-        closeRoadPopup();
-        closeRoadEditPanel();
+
+        // 도로폭 측정을 시작해도 현재 선택 도로구간의 속성창/편집창을 유지함.
+        // 사용자가 직접 닫기(X)를 누르기 전까지 계속 표시함.
+        if (selectedRoadGroupKey) {
+          setRoadGroupHighlight(selectedRoadGroupKey, true);
+          updateSelectedRouteBalloon();
+        }
       }
 
       function stopRoadWidthMeasure(preserveResult) {
@@ -16009,7 +16026,8 @@
 
       function clampListHeight(height) {
         const minHeight = 190;
-        const maxHeight = Math.max(minHeight, window.innerHeight * 0.82);
+        // 모바일 메뉴는 화면 맨 위까지 완전히 확장 가능하도록 함.
+        const maxHeight = Math.max(minHeight, window.innerHeight);
         return Math.max(minHeight, Math.min(maxHeight, height));
       }
 
