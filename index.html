@@ -10165,17 +10165,17 @@
       const DEFAULT_STYLES = {
         // 2026-09-14 통합 레이어 메뉴 기준값
         CITY:  { color: "#77B959", baseColor: "#FFFFFF", top: 4, base: 7.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
-        MYEON: { color: "#E7725A", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
-        RI:    { color: "#8896F8", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
-        FARM:  { color: "#CDAD5A", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 }
+        MYEON: { color: "#D84315", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
+        RI:    { color: "#007DAA", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
+        FARM:  { color: "#AD7700", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 }
       };
 
       // 스카이뷰 전용 고대비 도로색
       const SKY_ROAD_COLORS = {
         CITY:  "#00E5FF",  // 밝은 청록
-        MYEON: "#FF453A",  // 선명한 적색
-        RI:    "#1E5BFF",  // 강한 파랑
-        FARM:  "#FFC400"   // 선명한 노랑
+        MYEON: "#FF7043",  // 선명한 적색
+        RI:    "#36C5FF",  // 강한 파랑
+        FARM:  "#FFD140"   // 선명한 노랑
       };
 
       const DEFAULT_ROAD_LAYER_STACKS = {
@@ -10184,15 +10184,15 @@
           { name: "외곽라인", color: "#FFFFFF", skyColor: "#FFFFFF", width: 7.0, lineStyle: "inherit", opacity: 100, visible: true }
         ],
         MYEON: [
-          { name: "기본라인", color: "#E7725A", skyColor: "#E7725A", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
+          { name: "기본라인", color: "#D84315", skyColor: "#FF7043", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
           { name: "외곽라인", color: "#FFFFFF", skyColor: "#FFFFFF", width: 6.0, lineStyle: "inherit", opacity: 100, visible: true }
         ],
         RI: [
-          { name: "기본라인", color: "#8896F8", skyColor: "#8896F8", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
+          { name: "기본라인", color: "#007DAA", skyColor: "#36C5FF", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
           { name: "외곽라인", color: "#FFFFFF", skyColor: "#FFFFFF", width: 6.0, lineStyle: "inherit", opacity: 100, visible: true }
         ],
         FARM: [
-          { name: "기본라인", color: "#CDAD5A", skyColor: "#CDAD5A", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
+          { name: "기본라인", color: "#AD7700", skyColor: "#FFD140", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
           { name: "외곽라인", color: "#FFFFFF", skyColor: "#FFFFFF", width: 6.0, lineStyle: "inherit", opacity: 100, visible: true }
         ]
       };
@@ -10280,6 +10280,26 @@
       } catch (error) {
         ROAD_STYLES = JSON.parse(JSON.stringify(DEFAULT_STYLES));
       }
+
+      // Upgrade the previous default colors while keeping user-defined styles.
+      const previousRoadColors = {
+        MYEON: "#E7725A",
+        RI: "#8896F8",
+        FARM: "#CDAD5A"
+      };
+      Object.entries(previousRoadColors).forEach(function ([key, previousColor]) {
+        const defaults = DEFAULT_ROAD_LAYER_STACKS[key][0];
+        if (ROAD_STYLES[key].color?.toUpperCase() === previousColor) {
+          ROAD_STYLES[key].color = defaults.color;
+        }
+        const stack = ROAD_LAYER_STACKS[key];
+        if (!Array.isArray(stack)) return;
+        stack.forEach(function (layer) {
+          if (layer?.name !== "기본라인") return;
+          if (layer.color?.toUpperCase() === previousColor) layer.color = defaults.color;
+          if (layer.skyColor?.toUpperCase() === previousColor) layer.skyColor = defaults.skyColor;
+        });
+      });
 
       let STATUS_STYLES;
       try {
