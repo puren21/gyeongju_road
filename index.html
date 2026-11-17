@@ -7,6 +7,14 @@
   <title>경주시 농어촌도로 지도</title>
 
   <style>
+    /* Kakao renders dot strokes as 0.5px dashes with round caps. */
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 0.5,"] {
+      filter: drop-shadow(0.65px 0 0 white)
+              drop-shadow(-0.65px 0 0 white)
+              drop-shadow(0 0.65px 0 white)
+              drop-shadow(0 -0.65px 0 white);
+    }
+
     * {
       box-sizing: border-box;
       font-family: Arial, "Apple SD Gothic Neo", sans-serif;
@@ -15011,11 +15019,6 @@
 
       function isRoadVisualLineEnabled(road, config, index, topVisibleIndex) {
         if (config && config.visible === false) return false;
-        // 계획구간의 점선 아래에도 설정된 흰색 외곽선을 표시합니다.
-        if (road.layerId === "rural" && road.statusKey === "PLAN" && config &&
-            getRoadLayerDisplayColor(road.styleKey, config).toUpperCase() === "#FFFFFF") {
-          return true;
-        }
         return !hasPatternedRuralStroke(road) || index === topVisibleIndex;
       }
 
