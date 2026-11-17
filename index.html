@@ -9711,10 +9711,10 @@
     ["노선번호", "number"], ["구간", "segment"], ["구분", "gubun"],
     ["노선상태", "status"], ["차선", "lane"], ["도로폭(m)", "width"],
     ["연장(km)", "length"], ["기점", "start"], ["종점", "end"],
-    ["비고", "remark"], ["특이사항", "extra"]
+    ["특이사항", "extra"]
   ];
   const cityColumns = commonColumns.concat([["검토", "review"], ["변경사항", "change"]]);
-  const editable = new Set(["gubun", "status", "lane", "width", "start", "end", "remark", "extra"]);
+  const editable = new Set(["gubun", "status", "lane", "width", "start", "end", "extra"]);
   const numeric = new Set(["segment", "lane", "width", "length"]);
   const collator = new Intl.Collator("ko", { numeric:true, sensitivity:"base" });
   const escape = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({
