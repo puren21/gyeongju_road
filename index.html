@@ -24830,10 +24830,11 @@
         const group = groups.get(groupKey);
         if (!group) return;
 
-        const clickedRoad =
-          findClosestRoadInGroup(group, position) ||
-          road ||
-          null;
+        // The hit line uses the displayed path tier. A different segment's
+        // fine geometry may be closer to the pointer at this zoom level.
+        const clickedRoad = road && group.roads.includes(road)
+          ? road
+          : findClosestRoadInGroup(group, position);
 
         selectedRoadPopupState = {
           groupKey: groupKey,
@@ -24873,13 +24874,13 @@
 
             // 분할 저장 후 온라인 모델이 다시 복원되면 기존 road 객체 참조가 바뀔 수 있음.
             // 사용자가 클릭한 위치에 가장 가까운 실제 분할 구간을 다시 찾아 선택 대상으로 지정.
-            const currentRoad =
-              findClosestRoadInGroup(
-                currentGroup,
-                selectedRoadPopupState.anchorPosition || position
-              ) ||
-              currentGroup.roads[0] ||
-              null;
+            const previousRoad = selectedRoadPopupState.road;
+            const currentRoad = currentGroup.roads.includes(previousRoad)
+              ? previousRoad
+              : findClosestRoadInGroup(
+                  currentGroup,
+                  selectedRoadPopupState.anchorPosition || position
+                ) || currentGroup.roads[0] || null;
 
             setSelectedRoadSegment(
               currentGroup,
