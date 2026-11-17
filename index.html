@@ -11346,7 +11346,7 @@
             road.hitLine.setMap(null);
           }
 
-          if (topLine) {
+          if (topLine && !hasPatternedRuralStroke(road)) {
             setMapOptionsIfChanged(topLine, {
               strokeWeight: Math.max(2.2, getRoadStrokeWeight(road) - 0.7),
               strokeStyle: getRoadLayerStrokeStyle(
@@ -11533,7 +11533,7 @@
             road.hitLine.setMap(null);
           }
 
-          if (topVisibleIndex >= 0 && lines[topVisibleIndex]) {
+          if (topVisibleIndex >= 0 && lines[topVisibleIndex] && !hasPatternedRuralStroke(road)) {
             setMapOptionsIfChanged(lines[topVisibleIndex], {
               strokeWeight: Math.max(2, getRoadStrokeWeight(road) - 1.2)
             });
@@ -11593,7 +11593,7 @@
               road.hitLine.setMap(null);
             }
 
-            if (topLine) {
+            if (topLine && !hasPatternedRuralStroke(road)) {
               setMapOptionsIfChanged(topLine, {
                 strokeWeight: Math.max(2.2, getRoadStrokeWeight(road) - 0.8),
               strokeStyle: getRoadLayerStrokeStyle(
@@ -11619,7 +11619,7 @@
 
             lines.forEach(function(line, index) {
               const config = getRoadLayerStack(road.styleKey)[index];
-              const lineEnabled = !config || config.visible !== false;
+              const lineEnabled = isRoadVisualLineEnabled(road, config, index, topVisibleIndex);
 
               if (line) {
                 if (lineEnabled && !line.getMap()) line.setMap(map);
@@ -15002,10 +15002,16 @@
         return requestedStyle;
       }
 
-      function isRoadLayerLineVisible(styleKey, index) {
-        const stack = getRoadLayerStack(styleKey);
-        const config = stack[index];
-        return !config || config.visible !== false;
+      function hasPatternedRuralStroke(road) {
+        return road.layerId === "rural" &&
+          getStatusStrokeStyle(road.statusKey) !== "solid";
+      }
+
+      function isRoadVisualLineEnabled(road, config, index, topVisibleIndex) {
+        if (config && config.visible === false) return false;
+        // A solid casing fills the gaps of the patterned stroke, especially
+        // when selection gives both lines the same color.
+        return !hasPatternedRuralStroke(road) || index === topVisibleIndex;
       }
 
       function getTopVisibleRoadLineIndex(road) {
@@ -15029,6 +15035,7 @@
           road.layerId === "rural"
             ? false
             : isRoadStatusHidden(road.statusKey);
+        const topVisibleIndex = getTopVisibleRoadLineIndex(road);
         const isOff = hiddenRoadGroups.has(road.groupKey);
 
         if (roadVisible && !statusHidden && isOff) {
@@ -15040,7 +15047,9 @@
                 strokeColor: "#6f7f95",
                 strokeWeight: mapStrokePx(2, 1),
                 strokeOpacity: 0.5,
-                strokeStyle: "solid",
+                strokeStyle: road.layerId === "rural"
+                  ? getStatusStrokeStyle(road.statusKey)
+                  : "solid",
                 zIndex: 35
               });
             } else if (line.getMap()) {
@@ -15061,7 +15070,7 @@
         lines.forEach(function(line, index) {
           if (!line) return;
           const config = stack[index];
-          const enabled = !config || config.visible !== false;
+          const enabled = isRoadVisualLineEnabled(road, config, index, topVisibleIndex);
           const shouldShow = roadVisible && enabled && !statusHidden;
           const isShown = !!line.getMap();
 
@@ -18838,10 +18847,16 @@
               selectedKey !== groupKey &&
               selectedRoadGroupKey !== groupKey
             ) {
-              setMapOptionsIfChanged(roadLine, {
-                strokeColor: isSkyViewMode ? "#FFFFFF" : "#FFFF00",
-                strokeWeight: getRoadStrokeWeight(road) + mapStrokePx(2, 1)
-              });
+              const topLine = getRoadVisualLines(road)[getTopVisibleRoadLineIndex(road)];
+              if (!topLine) return;
+
+              const options = {
+                strokeColor: isSkyViewMode ? "#FFFFFF" : "#FFFF00"
+              };
+              if (!hasPatternedRuralStroke(road)) {
+                options.strokeWeight = getRoadStrokeWeight(road) + mapStrokePx(2, 1);
+              }
+              setMapOptionsIfChanged(topLine, options);
             }
           }
         );
@@ -19782,11 +19797,12 @@
           const highlightColor =
             isSelectedSegment ? "#E60012" : "#0057FF";
 
-          const statusHidden = isRoadStatusHidden(road.statusKey);
+          const topVisibleIndex = getTopVisibleRoadLineIndex(road);
+          const statusHidden = road.layerId !== "rural" && isRoadStatusHidden(road.statusKey);
 
           lines.forEach(function(line, index) {
             const config = stack[index] || stack[0];
-            const layerEnabled = !config || config.visible !== false;
+            const layerEnabled = isRoadVisualLineEnabled(road, config, index, topVisibleIndex);
 
             if (!layerEnabled || statusHidden) {
               if (line && line.getMap()) line.setMap(null);
