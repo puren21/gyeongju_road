@@ -7,51 +7,6 @@
   <title>경주시 농어촌도로 지도</title>
 
   <style>
-    #ruralAttributeTableOpen {
-      flex: 0 0 auto;
-      margin: 4px 10px 8px;
-      padding: 7px 10px;
-      border: 1px solid #d6e0ef;
-      border-radius: 7px;
-      background: #f3f7ff;
-      color: #174176;
-      text-align: left;
-      font-weight: 700;
-    }
-    #ruralAttributeTable {
-      width: min(1100px, calc(100vw - 24px));
-      max-width: none;
-      padding: 0;
-      border: 1px solid #d6e0ef;
-      border-radius: 12px;
-      color: #17263b;
-    }
-    #ruralAttributeTable::backdrop { background: rgb(15 25 40 / 35%); }
-    #ruralAttributeTable header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
-      padding: 12px;
-    }
-    #ruralAttributeTable header form { margin-left: auto; }
-    #ruralAttributeTable input, #ruralAttributeTable button {
-      padding: 6px 9px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      background: #fff;
-      color: #174176;
-    }
-    .attribute-table-scroll { max-height: 65dvh; overflow: auto; }
-    #ruralAttributeTable table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    #ruralAttributeTable th, #ruralAttributeTable td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #e1e7ef;
-      white-space: nowrap;
-      text-align: left;
-    }
-    #ruralAttributeTable th { position: sticky; top: 0; background: #edf2f9; }
-    #ruralAttributeTable tbody tr:nth-child(even) { background: #f8fafc; }
     * {
       box-sizing: border-box;
       font-family: Arial, "Apple SD Gothic Neo", sans-serif;
@@ -9709,6 +9664,389 @@
 
 </style>
 
+<style id="gyeongjuTableStyles">.road-table-launchers{display:flex;gap:6px;padding:8px 12px 6px;flex-wrap:wrap}
+.road-table-launchers button{flex:1 1 130px;min-height:37px;padding:7px 9px;border:1px solid #c9d9e6;border-radius:8px;background:#f3f8fc;color:#21577d;font:600 12px/1.3 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;cursor:pointer;text-align:center}
+.road-table-launchers button:hover{background:#e6f2ff;border-color:#84b3dc}
+#gyeongjuAttributeTable{position:fixed;z-index:1600;left:50%;bottom:16px;transform:translateX(-50%);width:min(1300px,calc(100vw - 24px));height:min(650px,70dvh);min-height:240px;box-sizing:border-box;display:flex;flex-direction:column;resize:both;overflow:hidden;border:1px solid #b9cbd9;border-radius:12px;background:white;box-shadow:0 12px 40px #15344b44;color:#23394b;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif}
+#gyeongjuAttributeTable[hidden]{display:none!important}
+#gyeongjuAttributeTable .road-table-header{display:flex;flex:none;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 11px;border-bottom:1px solid #d5e0e9;background:#f7fafc}
+#gyeongjuAttributeTable .road-table-header strong{white-space:nowrap;font-size:15px;margin-right:4px}
+#gyeongjuAttributeTable nav{display:flex;gap:3px;padding:2px;border-radius:7px;background:#eaf0f5}
+#gyeongjuAttributeTable button{border:1px solid #c4d3df;border-radius:6px;background:#fff;color:#245572;font:inherit;padding:5px 9px;white-space:nowrap;cursor:pointer}
+#gyeongjuAttributeTable button:disabled{opacity:.45;cursor:default}
+#gyeongjuAttributeTable nav button{background:transparent;border-color:transparent}
+#gyeongjuAttributeTable nav button[aria-pressed="true"],#roadTableEdit[aria-pressed="true"]{background:#dceeff;border-color:#81b2df;color:#155590}
+#roadTableSearch{flex:1 1 140px;min-width:130px;max-width:230px;padding:6px 8px;border:1px solid #bfcfdc;border-radius:6px;font:inherit}
+#roadTableCount{white-space:nowrap;color:#617688}
+#roadTableSave{background:#1875c2!important;color:white!important;border-color:#1875c2!important}
+#roadTableDelete{color:#a13636!important;border-color:#dcb9b9!important}
+#roadTableClose{margin-left:auto;font-size:21px!important;line-height:1!important;padding:2px 8px!important}
+#gyeongjuAttributeTable .road-table-message{padding:5px 11px;color:#587185;font-size:12px;min-height:18px;flex:none}
+#gyeongjuAttributeTable .road-table-message.error{color:#b12727}
+#gyeongjuAttributeTable .road-table-scroll{flex:1;min-height:0;overflow:auto}
+#gyeongjuAttributeTable table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:100%}
+#gyeongjuAttributeTable th,#gyeongjuAttributeTable td{box-sizing:border-box;border-right:1px solid #dce5eb;border-bottom:1px solid #dce5eb;padding:4px 6px;white-space:nowrap;overflow:hidden}
+#gyeongjuAttributeTable th{position:sticky;top:0;z-index:2;background:#e7eff5;text-align:left;overflow:visible}
+#gyeongjuAttributeTable th button{border:0;background:transparent;font-weight:700;max-width:calc(100% - 8px);text-overflow:ellipsis;overflow:hidden;text-align:left}
+#gyeongjuAttributeTable .road-table-resize{position:absolute;right:-4px;top:0;bottom:0;width:9px;z-index:3;cursor:col-resize;touch-action:none}
+#gyeongjuAttributeTable .road-table-resize:hover{background:#2385cc44}
+#gyeongjuAttributeTable tbody tr:nth-child(even){background:#f8fafc}
+#gyeongjuAttributeTable tbody tr:hover{background:#eff6fd}
+#gyeongjuAttributeTable tbody tr[aria-selected="true"]{background:#d9ebff;box-shadow:inset 3px 0 #2679ba}
+#gyeongjuAttributeTable tbody tr.road-table-dirty td:first-child{box-shadow:inset 3px 0 #e09819}
+#gyeongjuAttributeTable td input,#gyeongjuAttributeTable td select{box-sizing:border-box;width:100%;min-width:0;padding:4px;border:1px solid transparent;background:transparent;color:inherit;font:inherit;text-overflow:ellipsis}
+#gyeongjuAttributeTable td input:not([readonly]),#gyeongjuAttributeTable td select:not(:disabled){background:#fff;border-color:#aec9e0;border-radius:4px}
+#gyeongjuAttributeTable td input[readonly],#gyeongjuAttributeTable td select:disabled{pointer-events:none}
+#gyeongjuAttributeTable .road-table-select-cell{text-align:center}
+#gyeongjuAttributeTable td input.road-table-select{width:16px;height:16px;min-width:16px;margin:3px;vertical-align:middle;cursor:pointer;accent-color:#287bc3}
+#gyeongjuAttributeTable td input:focus,#gyeongjuAttributeTable td select:focus{outline:2px solid #2184d1;outline-offset:0}
+#gyeongjuAttributeTable.road-table-popup{position:relative;left:auto;bottom:auto;transform:none;width:100%;height:100dvh;min-height:0;resize:none;border:0;border-radius:0;box-shadow:none}
+@media (max-width:700px){#gyeongjuAttributeTable{left:6px;bottom:6px;transform:none;width:calc(100vw - 12px);height:65dvh}#gyeongjuAttributeTable .road-table-header{gap:5px}#gyeongjuAttributeTable .road-table-header strong{width:100%}#roadTableClose{position:absolute;right:9px;top:8px}}
+</style>
+<script>
+(function () {
+  "use strict";
+
+  const commonColumns = [
+    ["노선번호", "number"], ["구간", "segment"], ["구분", "gubun"],
+    ["노선상태", "status"], ["차선", "lane"], ["도로폭(m)", "width"],
+    ["연장(km)", "length"], ["기점", "start"], ["종점", "end"],
+    ["비고", "remark"], ["특이사항", "extra"]
+  ];
+  const cityColumns = commonColumns.concat([["검토", "review"], ["변경사항", "change"]]);
+  const editable = new Set(["gubun", "status", "lane", "width", "start", "end", "remark", "extra"]);
+  const numeric = new Set(["segment", "lane", "width", "length"]);
+  const collator = new Intl.Collator("ko", { numeric:true, sensitivity:"base" });
+  const escape = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  })[char]);
+
+  function valueOf(row, key) {
+    const props = row.properties || {};
+    if (key === "number") return row.layerId === "city" ? "시도 " + row.number : row.number;
+    if (key === "segment") return String(row.index + 1);
+    if (key === "gubun") return row.layerId === "city" ? "시도" : (props.GUBUN || props["구분"] || "농도");
+    if (key === "status") return row.status;
+    if (key === "length") return row.length;
+    const fields = { lane:"차선", width:"도로폭", start:"기점", end:"종점",
+      remark:"비고", extra:"특이사항", review:"검토", change:"변경사항" };
+    if (key === "start") return props["기점"] || props["시점"] || "";
+    return props[fields[key]] == null ? "" : String(props[fields[key]]);
+  }
+
+  function initGyeongjuAttributeTable(api) {
+    const launchers = document.querySelector(".road-table-launchers");
+    if (!launchers || launchers.dataset.ready === "true") return;
+    launchers.dataset.ready = "true";
+    const panel = document.createElement("section");
+    panel.id = "gyeongjuAttributeTable";
+    panel.hidden = true;
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", "도로 속성테이블");
+    panel.innerHTML =
+      '<header class="road-table-header"><strong id="roadTableTitle">도로 속성테이블</strong>' +
+      '<input id="roadTableSearch" type="search" placeholder="노선·속성 검색" aria-label="노선·속성 검색">' +
+      '<span id="roadTableCount" aria-live="polite"></span>' +
+      '<button id="roadTableEdit" type="button" aria-pressed="false">✎ 편집</button>' +
+      '<button id="roadTableDelete" type="button" disabled>선택 행 삭제</button>' +
+      '<button id="roadTableSave" type="button">저장</button>' +
+      '<button id="roadTableCancel" type="button">취소</button>' +
+      '<button id="roadTableClose" type="button" aria-label="속성테이블 닫기">×</button></header>' +
+      '<div class="road-table-message" id="roadTableMessage" role="status" aria-live="polite"></div>' +
+      '<div class="road-table-scroll"><table><colgroup></colgroup><thead></thead><tbody></tbody></table></div>';
+    document.body.appendChild(panel);
+
+    let layer = "rural", editing = false, busy = false, popup = null;
+    let sortKey = "number", sortDirection = 1, requestId = 0;
+    let widths = {}, changes = new Map(), selected = new Set(), deleted = new Set();
+    const $ = selector => panel.querySelector(selector);
+    const keyOf = row => row.groupKey + "::" + row.index;
+    const columns = () => layer === "city" ? cityColumns : commonColumns;
+    const rows = () => api.rows(layer);
+
+    function message(text, error) {
+      const el = $("#roadTableMessage");
+      el.textContent = text || "";
+      el.classList.toggle("error", !!error);
+    }
+    function currentValue(row, key) {
+      const pending = changes.get(keyOf(row));
+      if (key === "status" && row.layerId === "rural" && api.ruralStatus) {
+        return api.ruralStatus(Object.assign({}, row.properties, {
+          GUBUN: pending && pending.gubun !== undefined ? pending.gubun : row.properties.GUBUN,
+          "차선": pending && pending.lane !== undefined ? pending.lane : row.properties["차선"],
+          "도로폭": pending && pending.width !== undefined ? pending.width : row.properties["도로폭"]
+        }));
+      }
+      return pending && Object.prototype.hasOwnProperty.call(pending, key) ? pending[key] : valueOf(row, key);
+    }
+    function setEditingUI() {
+      $("#roadTableEdit").setAttribute("aria-pressed", String(editing));
+      $("#roadTableEdit").disabled = busy;
+      $("#roadTableDelete").disabled = busy || !editing || !selected.size;
+      $("#roadTableSave").disabled = busy || (!changes.size && !deleted.size);
+      $("#roadTableCancel").disabled = busy || (!changes.size && !deleted.size);
+      panel.querySelectorAll("tbody [data-field]").forEach(control => {
+        const canEdit = editing && !busy && !control.dataset.fixed;
+        control.disabled = !canEdit && control.tagName === "SELECT";
+        if (control.tagName === "INPUT") control.readOnly = !canEdit;
+      });
+    }
+    function widthFor(key) {
+      const saved = Number(widths[key]);
+      if (Number.isFinite(saved) && saved >= 60) return Math.min(saved, 650);
+      return key === "__select" ? 62 : key === "number" ? 125 : key === "segment" ? 65 :
+        ["remark", "extra", "review", "change", "start", "end"].includes(key) ? 200 : 105;
+    }
+    function applyWidths() {
+      let total = 0;
+      panel.querySelectorAll("col[data-column]").forEach(col => {
+        const width = widthFor(col.dataset.column);
+        col.style.width = width + "px";
+        total += width;
+      });
+      panel.querySelector("table").style.width = total + "px";
+    }
+    function render() {
+      if (panel.hidden) return;
+      const all = rows();
+      const query = $("#roadTableSearch").value.trim().toLocaleLowerCase();
+      const filtered = all.filter(row => !deleted.has(keyOf(row)) && (!query || columns().some(([, key]) =>
+        String(currentValue(row, key)).toLocaleLowerCase().includes(query))));
+      filtered.sort((a, b) => {
+        const av = String(currentValue(a, sortKey)).trim(), bv = String(currentValue(b, sortKey)).trim();
+        if (!av || !bv) return (!av ? 1 : 0) - (!bv ? 1 : 0);
+        const comparison = numeric.has(sortKey) && Number.isFinite(Number(av)) && Number.isFinite(Number(bv))
+          ? Number(av) - Number(bv) : collator.compare(av, bv);
+        return comparison * sortDirection || collator.compare(a.groupKey, b.groupKey) || a.index - b.index;
+      });
+      $("#roadTableTitle").textContent = layer === "city" ? "시도 속성테이블" : "농어촌도로 속성테이블";
+      panel.querySelectorAll("[data-table-layer]").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.tableLayer === layer));
+      });
+      $("#roadTableCount").textContent = filtered.length + " / " + all.length + "구간" +
+        (deleted.size ? " · 삭제 예정 " + deleted.size : "");
+      const cols = columns();
+      $("thead").innerHTML = '<tr><th scope="col">선택</th>' + cols.map(([label, key]) =>
+        '<th scope="col" aria-sort="' + (sortKey === key ? (sortDirection === 1 ? "ascending" : "descending") : "none") +
+        '"><button type="button" data-sort="' + escape(key) + '">' + escape(label) +
+        (sortKey === key ? (sortDirection === 1 ? " ▲" : " ▼") : " ↕") +
+        '</button><span class="road-table-resize" data-resize="' + escape(key) +
+        '" role="separator" tabindex="0" aria-label="' + escape(label) + ' 열 너비 조절"></span></th>').join("") + "</tr>";
+      $("colgroup").innerHTML = '<col data-column="__select">' +
+        cols.map(([, key]) => '<col data-column="' + escape(key) + '">').join("");
+      $("tbody").innerHTML = filtered.map(row => {
+        const rowKey = keyOf(row);
+        return '<tr data-row="' + escape(rowKey) + '" aria-selected="' + selected.has(rowKey) +
+          '" class="' + (changes.has(rowKey) ? "road-table-dirty" : "") + '">' +
+          '<td class="road-table-select-cell"><input class="road-table-select" type="checkbox" aria-label="' +
+            escape((row.layerId === "city" ? "시도 " : "") + row.number + " " + (row.index + 1) + "구간 선택") +
+            '"' + (selected.has(rowKey) ? " checked" : "") + '></td>' + cols.map(([, key]) => {
+          const value = currentValue(row, key);
+          const fixed = !editable.has(key) || key === "status" || (row.layerId === "city" && key === "gubun");
+          const opts = key === "status" ? ["개설", "미확장", "미개설"] : key === "gubun" ? ["면도", "리도", "농도"] : null;
+          const control = opts && !fixed
+            ? '<select data-field="' + key + '" aria-label="' + escape(key) + '">' +
+                opts.map(option => '<option' + (option === value ? " selected" : "") + '>' + option + '</option>').join("") + '</select>'
+            : '<input type="text" data-field="' + key + '" aria-label="' + escape(key) +
+              '" value="' + escape(value) + '"' + (fixed ? ' data-fixed="true"' : "") + '>';
+          return "<td>" + control + "</td>";
+        }).join("") + "</tr>";
+      }).join("");
+      applyWidths();
+      setEditingUI();
+    }
+
+    function close() {
+      if (popup && !popup.closed) { popup.close(); return; }
+      panel.hidden = true;
+      panel.classList.remove("road-table-popup");
+    }
+    async function open(nextLayer) {
+      layer = nextLayer;
+      selected.clear();
+      $("#roadTableSearch").value = "";
+      try { widths = JSON.parse(localStorage.getItem("gyeongju-table-widths-" + layer) || "{}"); }
+      catch (_) { widths = {}; }
+      if (popup && !popup.closed) popup.focus();
+      else {
+        const opened = window.open("", "gyeongjuRoadAttributes", "popup=yes,width=1300,height=680,resizable=yes,scrollbars=yes");
+        panel.hidden = false;
+        if (opened) {
+          popup = opened;
+          const doc = opened.document;
+          doc.title = "경주시 농어촌도로 속성테이블";
+          doc.documentElement.lang = "ko";
+          const style = doc.createElement("style");
+          style.textContent = document.getElementById("gyeongjuTableStyles").textContent;
+          doc.head.appendChild(style);
+          doc.body.replaceChildren(panel);
+          panel.classList.add("road-table-popup");
+          opened.addEventListener("beforeunload", () => {
+            document.body.appendChild(panel);
+            panel.hidden = true;
+            panel.classList.remove("road-table-popup");
+            popup = null;
+          }, { once:true });
+          opened.focus();
+        } else message("팝업이 차단되어 지도 안에 속성테이블을 표시했습니다.");
+      }
+      render();
+      const currentRequest = ++requestId;
+      message("저장된 속성을 확인하고 있습니다.");
+      try {
+        await api.load(layer);
+        if (currentRequest !== requestId) return;
+        render();
+        message("행 선택: 지도 이동 · Shift+클릭: 추가 선택 · 삭제한 행은 저장 전 취소할 수 있습니다.");
+      } catch (error) {
+        if (currentRequest === requestId) message("온라인 속성 확인 실패: " + error.message, true);
+      }
+    }
+
+    launchers.addEventListener("click", event => {
+      const button = event.target.closest("[data-road-table]");
+      if (button) open(button.dataset.roadTable);
+    });
+    $("#roadTableClose").onclick = close;
+    $("#roadTableEdit").onclick = () => { editing = !editing; setEditingUI(); };
+    $("#roadTableSearch").oninput = render;
+    $("#roadTableCancel").onclick = () => {
+      changes.clear(); deleted.clear(); selected.clear(); render();
+      message("저장하지 않은 수정과 삭제를 취소했습니다.");
+    };
+    $("#roadTableDelete").onclick = () => {
+      if (!editing || busy || !selected.size) return;
+      selected.forEach(rowKey => { deleted.add(rowKey); changes.delete(rowKey); });
+      const count = selected.size;
+      selected.clear();
+      render();
+      message(count + "개 구간을 삭제 예정으로 표시했습니다. 저장하면 지도에서도 제거됩니다.");
+    };
+    $("thead").onclick = event => {
+      const button = event.target.closest("[data-sort]");
+      if (!button) return;
+      const key = button.dataset.sort;
+      sortDirection = key === sortKey ? -sortDirection : 1;
+      sortKey = key;
+      render();
+    };
+    $("thead").addEventListener("pointerdown", event => {
+      const handle = event.target.closest("[data-resize]");
+      if (!handle || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const key = handle.dataset.resize, start = event.clientX, initial = widthFor(key);
+      handle.setPointerCapture(event.pointerId);
+      const move = e => { widths[key] = Math.max(60, Math.min(650, initial + e.clientX - start)); applyWidths(); };
+      const finish = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        try { localStorage.setItem("gyeongju-table-widths-" + layer, JSON.stringify(widths)); } catch (_) {}
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+    });
+    $("tbody").addEventListener("input", updateCell);
+    $("tbody").addEventListener("change", updateCell);
+    function updateCell(event) {
+      const control = event.target.closest("[data-field]");
+      const tr = control && control.closest("tr[data-row]");
+      if (!tr || !editing || control.readOnly || control.disabled) return;
+      const row = rows().find(item => keyOf(item) === tr.dataset.row);
+      if (!row) return;
+      const pending = Object.assign({}, changes.get(tr.dataset.row) || {});
+      if (control.value === String(valueOf(row, control.dataset.field))) delete pending[control.dataset.field];
+      else pending[control.dataset.field] = control.value;
+      if (Object.keys(pending).length) changes.set(tr.dataset.row, pending);
+      else changes.delete(tr.dataset.row);
+      tr.classList.toggle("road-table-dirty", changes.has(tr.dataset.row));
+      const statusControl = tr.querySelector('[data-field="status"]');
+      if (row.layerId === "rural" && statusControl) statusControl.value = currentValue(row, "status");
+      setEditingUI();
+    }
+    $("tbody").onclick = event => {
+      if (event.target.matches(".road-table-select")) {
+        const tr = event.target.closest("tr[data-row]");
+        if (tr) {
+          if (event.target.checked) selected.add(tr.dataset.row);
+          else selected.delete(tr.dataset.row);
+          tr.setAttribute("aria-selected", String(selected.has(tr.dataset.row)));
+          setEditingUI();
+        }
+        return;
+      }
+      const control = event.target.closest("input,select");
+      if (control && editing && !control.readOnly && !control.disabled) return;
+      const tr = event.target.closest("tr[data-row]");
+      if (!tr) return;
+      const row = rows().find(item => keyOf(item) === tr.dataset.row);
+      if (!row) return;
+      if (!event.shiftKey) selected.clear();
+      selected.add(tr.dataset.row);
+      panel.querySelectorAll("tbody tr").forEach(item => item.setAttribute("aria-selected", String(selected.has(item.dataset.row))));
+      panel.querySelectorAll("tbody tr").forEach(item => {
+        const checkbox = item.querySelector(".road-table-select");
+        if (checkbox) checkbox.checked = selected.has(item.dataset.row);
+      });
+      setEditingUI();
+      if (!event.shiftKey) api.select(row.groupKey, row.index);
+    };
+    $("#roadTableSave").onclick = async () => {
+      if ((!changes.size && !deleted.size) || busy) return;
+      const all = rows();
+      const edits = [];
+      const removals = [];
+      for (const [rowKey, values] of changes) {
+        const row = all.find(item => keyOf(item) === rowKey);
+        if (!row) { message("구간이 변경되었습니다. 테이블을 다시 열어 주세요.", true); return; }
+        for (const field of ["lane", "width", "length"]) {
+          if (field in values && values[field].trim() !== "" &&
+              (!Number.isFinite(Number(values[field])) || Number(values[field]) < 0)) {
+            message("차선·도로폭·연장은 0 이상의 숫자로 입력해 주세요.", true); return;
+          }
+        }
+        edits.push({ groupKey:row.groupKey, index:row.index, values:Object.assign({}, values) });
+      }
+      for (const rowKey of deleted) {
+        const row = all.find(item => keyOf(item) === rowKey);
+        if (!row) { message("삭제할 구간이 변경되었습니다. 테이블을 다시 열어 주세요.", true); return; }
+        removals.push({ groupKey:row.groupKey, index:row.index });
+      }
+      busy = true;
+      setEditingUI();
+      message("수정·삭제 내용을 저장하고 있습니다.");
+      try {
+        await api.save(edits, removals);
+        changes.clear();
+        deleted.clear();
+        selected.clear();
+        render();
+        message(edits.length + "개 구간 수정, " + removals.length + "개 구간 삭제를 저장했습니다.");
+      } catch (error) {
+        const savedGroups = new Set(error.savedGroups || []);
+        if (savedGroups.size) {
+          for (const rowKey of changes.keys()) {
+            if (savedGroups.has(rowKey.slice(0, rowKey.lastIndexOf("::")))) changes.delete(rowKey);
+          }
+          for (const rowKey of deleted) {
+            if (savedGroups.has(rowKey.slice(0, rowKey.lastIndexOf("::")))) deleted.delete(rowKey);
+          }
+          render();
+        }
+        message((savedGroups.size ? savedGroups.size + "개 노선은 저장됨. 나머지 " : "") +
+          "저장 실패: " + error.message, true);
+      } finally { busy = false; setEditingUI(); }
+    };
+    window.addEventListener("pagehide", () => { if (popup && !popup.closed) popup.close(); });
+  }
+
+  window.initGyeongjuAttributeTable = initGyeongjuAttributeTable;
+})();
+
+</script>
 </head>
 
 <body>
@@ -9858,7 +10196,9 @@
       <button type="button" class="road-kind-filter active" data-kind="farm">농도</button>
     </div>
 
-    <button id="ruralAttributeTableOpen" type="button">속성테이블 보기</button>
+    <div id="ruralAttributeTableOpen" class="road-table-launchers">
+      <button type="button" data-road-table="rural">속성테이블 보기</button>
+    </div>
     <div class="search-result-summary">
       <span>검색결과</span>
       <span id="searchResultCount">0건</span>
@@ -9875,18 +10215,6 @@
       <div id="searchEmpty">검색 결과가 없습니다.</div>
     </div>
   </div>
-
-  <dialog id="ruralAttributeTable" aria-labelledby="ruralAttributeTableTitle">
-    <header>
-      <strong id="ruralAttributeTableTitle">농어촌도로 속성테이블</strong>
-      <input type="search" placeholder="노선·속성 검색" aria-label="노선·속성 검색">
-      <span role="status"></span>
-      <form method="dialog"><button type="submit">닫기</button></form>
-    </header>
-    <div class="attribute-table-scroll" tabindex="0" aria-label="농어촌도로 구간 목록">
-      <table><thead></thead><tbody></tbody></table>
-    </div>
-  </dialog>
 
   <div id="roadLayerEditorPanel" role="dialog" aria-label="레이어 설정">
     <div class="road-layer-editor-header">
@@ -17510,7 +17838,7 @@
         }, 500);
       });
 
-      roadsReadyPromise
+      const ruralTableReady = roadsReadyPromise
       .then(async function () {
         try {
           await loadRuralOnlineRoadEdits();
@@ -19454,69 +19782,87 @@
         showInfo(position || map.getCenter(), group.key, road);
       }
 
-      const ruralAttributeTable = document.getElementById("ruralAttributeTable");
-      const ruralAttributeSearch = ruralAttributeTable.querySelector("input");
-      const ruralAttributeRows = ruralAttributeTable.querySelector("tbody");
-      const ruralAttributeCount = ruralAttributeTable.querySelector('[role="status"]');
-      const ruralAttributeHeaders = [
-        "노선번호", "구간", "구분", "노선상태", "차선", "도로폭(m)",
-        "연장(km)", "기점", "종점", "비고", "기타"
-      ];
-      const headerRow = ruralAttributeTable.querySelector("thead").insertRow();
-      ruralAttributeHeaders.forEach(function (label) {
-        const cell = document.createElement("th");
-        cell.scope = "col";
-        cell.textContent = label;
-        headerRow.appendChild(cell);
-      });
-      const routeCollator = new Intl.Collator("ko", { numeric: true });
-
-      function renderRuralAttributeRows() {
-        const query = ruralAttributeSearch.value.trim().toLowerCase();
-        const tableBody = document.createDocumentFragment();
-        const ruralGroups = Array.from(groups.values())
-          .filter(group => group.layerId === "rural")
-          .sort((left, right) => routeCollator.compare(left.number, right.number));
-        let count = 0;
-
-        ruralGroups.forEach(function (group) {
-          group.roads.forEach(function (road, index) {
-            const props = road.properties || {};
-            const values = [
-              group.number, index + 1, props["구분"] || props.GUBUN || props.gubun,
-              roadStatusLabel(road.statusKey), props["차선"], props["도로폭"],
-              formatRoadLengthKm(roadGeometryLengthKm(road)),
-              props["기점"] || props["시점"], props["종점"], props["비고"],
-              props["기타"] || props["특이사항"]
-            ];
-            if (query && !values.some(value => String(value ?? "").toLowerCase().includes(query))) return;
-
-            const row = document.createElement("tr");
-            values.forEach(function (value) {
-              row.insertCell().textContent = value ?? "—";
-            });
-            const link = document.createElement("button");
-            link.type = "button";
-            link.textContent = group.number;
-            link.setAttribute("aria-label", group.number + " " + (index + 1) + "구간 선택");
-            link.addEventListener("click", function () {
-              ruralAttributeTable.close();
-              selectGroup(group.key, road);
-            });
-            row.cells[0].replaceChildren(link);
-            tableBody.appendChild(row);
-            count += 1;
-          });
-        });
-        ruralAttributeRows.replaceChildren(tableBody);
-        ruralAttributeCount.textContent = count ? count + "개 구간" : "표시할 구간이 없습니다.";
+      async function saveRuralTableChanges(edits, removals) {
+        if (roadEditSaving || roadEditSessionGroupKey) {
+          throw new Error("지도에서 진행 중인 편집을 먼저 종료해 주세요.");
+        }
+        const keys = new Set(edits.concat(removals).map(item => item.groupKey));
+        const savedGroups = [];
+        roadEditSaving = true;
+        try {
+          for (const key of keys) {
+            const group = groups.get(key);
+            if (!group || group.layerId !== "rural") throw new Error("농어촌도로 구간을 찾을 수 없습니다.");
+            const segments = serializeRoadGroupSegments(group);
+            const groupEdits = edits.filter(item => item.groupKey === key);
+            const deleted = new Set(removals.filter(item => item.groupKey === key).map(item => item.index));
+            if (segments.length !== group.roads.length ||
+                groupEdits.some(item => !segments[item.index]) ||
+                Array.from(deleted).some(index => !segments[index])) {
+              throw new Error("구간이 변경되었습니다. 표를 다시 열어 주세요.");
+            }
+            for (const edit of groupEdits) {
+              const properties = segments[edit.index].properties;
+              const values = edit.values;
+              applyRoadEditValuesToRoad(group, { properties }, { ...values, specialNote: values.extra });
+              if (values.gubun !== undefined) setPropertyValue(properties, ["GUBUN", "구분"], "GUBUN", values.gubun);
+              if (values.remark !== undefined) properties["비고"] = values.remark;
+              normalizeRuralRoadAutoStatus(properties);
+            }
+            const payload = {
+              version: 3,
+              layerId: "rural",
+              number: String(group.number),
+              segmentModel: segments.filter((segment, index) => !deleted.has(index)),
+              roads: {},
+              geometries: {}
+            };
+            await saveOnlineRoadEdits(group, payload);
+            savedGroups.push(key);
+            if (selectedRoadGroupKey === key) {
+              closeRoadPopup();
+              clearSelectedRoadHighlight();
+            }
+            applyOnlineRoadEdits(group, payload);
+          }
+        } catch (error) {
+          error.savedGroups = savedGroups;
+          throw error;
+        } finally {
+          roadEditSaving = false;
+          if (savedGroups.length) {
+            refreshAllRoadJoinLines();
+            buildGroupLabels();
+            makeLists();
+            invalidateRoadVisibilityCache();
+            applyRoadVisibility();
+            updateLabels();
+          }
+        }
       }
 
-      document.getElementById("ruralAttributeTableOpen").addEventListener("click", function () {
-        renderRuralAttributeRows();
-        ruralAttributeTable.showModal();
+      window.initGyeongjuAttributeTable({
+        rows: function () {
+          return Array.from(groups.values())
+            .filter(group => group.layerId === "rural")
+            .flatMap(group => group.roads.map((road, index) => ({
+              groupKey: group.key,
+              number: group.number,
+              index: index,
+              layerId: "rural",
+              properties: road.properties,
+              status: roadStatusLabel(road.statusKey),
+              length: formatRoadDataLengthKm(roadGeometryLengthKm(road))
+            })));
+        },
+        ruralStatus: normalizeRuralRoadAutoStatus,
+        select: function (key, index) {
+          const group = groups.get(key);
+          if (group && !roadEditSessionGroupKey) selectGroup(key, group.roads[index]);
+        },
+        load: function () { return ruralTableReady; },
+        save: saveRuralTableChanges
       });
-      ruralAttributeSearch.addEventListener("input", renderRuralAttributeRows);
 
       function selectGroup(groupKey, road) {
         const group = groups.get(groupKey);
@@ -21241,11 +21587,20 @@
       }
 
       function replaceRuralGroupFromSegmentModel(group, segmentModel) {
-        if (!group || group.layerId !== "rural" || !Array.isArray(segmentModel) || !segmentModel.length) {
+        if (!group || group.layerId !== "rural" || !Array.isArray(segmentModel)) {
           return false;
         }
 
         group.roads.slice().forEach(removeRoadObjectFromMap);
+        if (!segmentModel.length) {
+          removeRoadGroupJoinLines(group);
+          group.roads = [];
+          group.paths = [];
+          group.propertiesList = [];
+          groups.delete(group.key);
+          ruralTotalLengths.delete(group.key);
+          return true;
+        }
 
         group.roads = [];
         group.paths = [];
@@ -21721,8 +22076,7 @@
         // 분할 저장된 농어촌도로는 전체 구간 모델을 먼저 복원함.
         if (
           group.layerId === "rural" &&
-          Array.isArray(payload.segmentModel) &&
-          payload.segmentModel.length
+          Array.isArray(payload.segmentModel)
         ) {
           if (replaceRuralGroupFromSegmentModel(group, payload.segmentModel)) {
             changed = true;
