@@ -20331,8 +20331,7 @@
             enabled &&
             roadIndex >= 0 &&
             roadIndex === selectedRoadSegmentIndex;
-          const highlightColor =
-            isSelectedSegment ? "#E60012" : "#8927D4";
+          const highlightZIndex = isSelectedSegment ? 100 : 90;
 
           const topVisibleIndex = getTopVisibleRoadLineIndex(road);
           const statusHidden = road.layerId !== "rural" && isRoadStatusHidden(road.statusKey);
@@ -20352,9 +20351,9 @@
 
             setMapOptionsIfChanged(line, {
               strokeColor: enabled
-                ? highlightColor
+                ? COLORS.SELECTED
                 : getRoadLayerDisplayColor(road.styleKey, config),
-              strokeWeight: enabled ? 8 : mapStrokePx(
+              strokeWeight: enabled ? (isSelectedSegment ? 12 : 8) : mapStrokePx(
                 (
                   road.statusKey === "UNOPENED"
                     ? Math.max(
@@ -20374,7 +20373,7 @@
               strokeStyle: enabled
                 ? "solid"
                 : getRoadLayerStrokeStyle(road, config, index),
-              zIndex: enabled ? 90 - index : 40 - index
+              zIndex: enabled ? highlightZIndex : 40 - index
             });
           });
 
@@ -20384,10 +20383,10 @@
               map: map,
               path: highlightLine.getPath(),
               strokeColor: "#FFFFFF",
-              strokeWeight: 10,
+              strokeWeight: isSelectedSegment ? 16 : 10,
               strokeOpacity: 1,
               strokeStyle: "solid",
-              zIndex: 89 - topVisibleIndex
+              zIndex: highlightZIndex - 1
             });
             roadGroupHighlightUnderlays.get(groupKey).push(underlay);
           }
