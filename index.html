@@ -11391,6 +11391,76 @@
         });
       }
 
+      function forceRuralRoadStatusStylesAfterZoom() {
+        allRoads.forEach(function(road) {
+          if (!road || road.layerId !== "rural" || !road._visible) return;
+
+          // 각 라인의 현재 속성값으로 상태를 다시 계산함.
+          normalizeRuralRoadAutoStatus(road.properties || {});
+          road.statusKey = getRoadStatusKey(
+            road.properties || {},
+            road.layerId
+          );
+          road.styleKey = getStyleKey(
+            road.properties || {},
+            road.layerId
+          );
+
+          const stack = getRoadLayerStack(road.styleKey);
+          const lines = getRoadVisualLines(road);
+
+          lines.forEach(function(line, index) {
+            if (!line) return;
+
+            const config = stack[index] || stack[0];
+            if (!config || config.visible === false) return;
+
+            const options = {
+              strokeColor: getRoadLayerDisplayColor(
+                road.styleKey,
+                config
+              ),
+              strokeWeight: mapStrokePx(
+                (road.statusKey === "UNOPENED" ||
+                 road.statusKey === "UNEXPANDED")
+                  ? Math.max(
+                      Number(config.width) || 1,
+                      STATUS_STYLES.UNOPENED_SIZE
+                    )
+                  : Number(config.width) || 1,
+                1
+              ),
+              strokeOpacity:
+                Math.max(
+                  0,
+                  Math.min(100, Number(config.opacity) || 0)
+                ) / 100,
+              strokeStyle: getRoadLayerStrokeStyle(
+                road,
+                config,
+                index
+              ),
+              zIndex: 40 - index
+            };
+
+            // 선택 시 정상화되는 것과 동일하게 실제 Polyline에
+            // 옵션을 직접 다시 써서 Kakao의 줌 재렌더링 상태를 덮어씀.
+            line.setOptions(options);
+            line._lastMapOptions = Object.assign({}, options);
+          });
+
+          applyRoadLineVisibility(road);
+        });
+
+        // 선택된 노선은 마지막에 다시 강조색만 적용함.
+        if (selectedRoadGroupKey) {
+          setRoadGroupHighlight(
+            selectedRoadGroupKey,
+            true
+          );
+        }
+      }
+
       function isRoadDatasetVisible(road) {
         if (!road) return false;
         if (road.layerId === "rural") return changedRoadDatasetVisible;
@@ -11501,6 +11571,10 @@
           });
 
           updateLabels();
+
+          // 줌 복원 직후 모든 농어촌도로의 개설상태 표현을
+          // 선택 동작과 동일하게 직접 재적용함.
+          forceRuralRoadStatusStylesAfterZoom();
 
           if (selectedRoadGroupKey) {
             setRoadGroupHighlight(selectedRoadGroupKey, true);
@@ -11698,6 +11772,7 @@
         } else {
           applyRoadVisibility();
           updateLabels();
+          forceRuralRoadStatusStylesAfterZoom();
 
           if (selectedRoadGroupKey) {
             setRoadGroupHighlight(selectedRoadGroupKey, true);
@@ -11707,6 +11782,19 @@
         restoreInteractionLayers();
         updateSelectedRouteBalloon();
         restoreSelectedRoadPopup();
+
+        // Kakao 벡터 레이어가 idle 직후 한 번 더 그려지는 경우까지 보정.
+        if (roadStatusStyleRefreshPending === false) {
+          setTimeout(function() {
+            if (
+              !mapInteracting &&
+              !windowsDragFastMode &&
+              !windowsZoomFastMode
+            ) {
+              forceRuralRoadStatusStylesAfterZoom();
+            }
+          }, 120);
+        }
 
         // 도로노선 정보 팝업은 viewport-fixed이므로 지도 이동 후 재배치하지 않음.
         if (basePlaceOverlay && parcelInfoPopupActive) {
