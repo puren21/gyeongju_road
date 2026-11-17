@@ -10,12 +10,8 @@
 
   <style>
     #baseRoadDatasetRetry[hidden], #changedRoadDrawing[hidden], #changedRoadFields[hidden] { display: none; }
-    #changedRoadDrawing { padding: 8px 0 0; }
     #changedRoadDrawingHelp { margin: 0 0 8px; font-size: 13px; }
-    #changedRoadFields { display: grid; gap: 6px; margin-top: 8px; }
-    #changedRoadFields label { display: grid; grid-template-columns: 86px minmax(0, 1fr); align-items: center; font-size: 13px; }
-    #changedRoadFields input, #changedRoadFields select { min-width: 0; padding: 5px; }
-    #changedRoadFields button { min-height: 36px; cursor: pointer; }
+    #changedRoadFields .road-dataset-actions { margin-top: 10px; }
     #map path[data-road-square-dash] { stroke-linecap: butt !important; }
     * {
       box-sizing: border-box;
@@ -18224,6 +18220,7 @@
       let pendingBaseRoadGeoJSON = null;
       let pendingChangedRoadGeoJSON = null;
       let captureChangedRoadPoint = null;
+      let closeChangedRoadDrawing = null;
 
       function refreshRoadDatasets() {
         refreshAllRoadJoinLines();
@@ -18541,12 +18538,12 @@
                   '<button id="changedRoadFinish" type="button">그리기 완료</button>' +
                   '<button id="changedRoadCancel" type="button">취소</button>' +
                 '</div>' +
-                '<form id="changedRoadFields" hidden>' +
-                  '<label>도로번호<input name="number" required maxlength="80"></label>' +
-                  '<label>도로구분<select name="kind"><option>면도</option><option selected>리도</option><option>농도</option></select></label>' +
-                  '<label>차선 수<input name="lane" type="number" min="0" step="1"></label>' +
-                  '<label>도로폭(m)<input name="width" type="number" min="0" step="any"></label>' +
-                  '<button type="submit">변경 도로구간에 추가</button>' +
+                '<form id="changedRoadFields" class="popup-inline-edit-form" hidden>' +
+                  popupEditRow("도로번호", "number", "", "text") +
+                  popupEditRow("구분", "kind", "리도", "select", ["면도", "리도", "농도"]) +
+                  popupEditRow("차선 수", "lane", "", "number") +
+                  popupEditRow("도로폭", "width", "", "number", null, false, "m") +
+                  '<div class="road-dataset-actions"><button type="submit">변경 도로구간에 추가</button></div>' +
                 '</form>' +
               '</section>' +
             '</div>' +
@@ -18741,6 +18738,14 @@
         let drawingToolbar = null;
         const cancel = document.getElementById("changedRoadCancel");
         const drawingActions = undo.parentElement;
+        const drawingHome = drawing.parentElement;
+        fields.elements.number.required = true;
+        fields.elements.number.maxLength = 80;
+        for (const name of ["lane", "width"]) {
+          fields.elements[name].type = "number";
+          fields.elements[name].min = "0";
+        }
+        fields.elements.width.step = "any";
 
         function showDrawingPreview() {
           renderRoadGeometryAddPreview(draft);
@@ -18752,6 +18757,8 @@
         }
 
         function cancelDrawing() {
+          if (drawing.hidden) return;
+          closeChangedRoadDrawing = null;
           captureChangedRoadPoint = null;
           drawingActions.append(undo, finish, cancel);
           drawingToolbar?.remove();
@@ -18760,8 +18767,10 @@
           clearRoadGeometryAddPreview(draft);
           draft.addPath = [];
           drawing.hidden = true;
+          drawingHome.appendChild(drawing);
           fields.hidden = true;
           fields.reset();
+          if (roadPopupOverlay?.classList?.contains("changed-road-drawing-popup")) closeRoadPopup();
         }
 
         document.getElementById("drawChangedRoad").addEventListener("click", function() {
@@ -18776,7 +18785,18 @@
           if (!drawing.hidden) return;
           closeRoadPopup();
           clearSelectedRoadHighlight();
+          const popup = createFixedRoadPopup(
+            '<div class="road-popup changed-road-drawing-popup">' +
+              '<div class="popup-drag-handle popup-header">' +
+                '<button type="button" class="popup-close" aria-label="닫기" onclick="closeRoadPopup()">×</button>' +
+                '<div class="popup-eyebrow">변경 도로구간</div>' +
+                '<div class="popup-title-line"><div class="popup-title">선형 그리기</div></div>' +
+              '</div><div class="road-attributes"></div>' +
+            '</div>'
+          );
+          popup.querySelector(".road-attributes").appendChild(drawing);
           drawing.hidden = false;
+          closeChangedRoadDrawing = cancelDrawing;
           drawingToolbar = createRoadGeometryToolbar({ layerId: "rural" });
           drawingToolbar.querySelectorAll(".geometry-icon-btn").forEach(function(button) {
             if (button.id === "geometryAddModeBtn") {
@@ -20160,6 +20180,7 @@
       }
 
       function closeRoadPopup() {
+        closeChangedRoadDrawing?.();
         // 사용자가 X로 닫은 뒤 지도 이동/확대축소에서 자동으로 다시 열리지 않도록 상태도 함께 해제
         selectedRoadPopupState = null;
         if (roadPopupOverlay) {
@@ -25324,6 +25345,8 @@
 
         const popup = holder.firstElementChild;
         if (!popup) return null;
+
+        closeChangedRoadDrawing?.();
 
         // 혹시 남아 있는 이전 팝업 제거
         const oldPopup = document.querySelector("body > .road-popup");
