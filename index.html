@@ -10068,7 +10068,10 @@
       path.toggleAttribute("data-road-square-dash", patterned && dash !== 0.5);
       let outline = underlays.get(path);
 
-      if (!patterned || !mapElement.contains(path)) {
+      // Hidden routes keep a muted guide stroke without a white outline.
+      const mutedGuide = path.style.stroke === "rgb(111, 127, 149)" &&
+        Number(path.style.strokeOpacity) === 0.5;
+      if (!patterned || mutedGuide || !mapElement.contains(path)) {
         if (outline) outline.remove();
         return;
       }
@@ -25587,6 +25590,7 @@
           setRoadGroupHighlight(groupKey, true);
           updateSelectedRouteBalloon();
         } else if (!visible && selectedRoadGroupKey === groupKey) {
+          setRoadGroupHighlight(groupKey, false);
           removeSelectedRouteBalloon();
         }
       }
