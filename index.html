@@ -11348,7 +11348,12 @@
 
           if (topLine) {
             setMapOptionsIfChanged(topLine, {
-              strokeWeight: Math.max(2.2, getRoadStrokeWeight(road) - 0.7)
+              strokeWeight: Math.max(2.2, getRoadStrokeWeight(road) - 0.7),
+              strokeStyle: getRoadLayerStrokeStyle(
+                road,
+                getRoadLayerStack(road.styleKey)[topVisibleIndex],
+                topVisibleIndex
+              )
             });
           }
         });
@@ -11370,94 +11375,25 @@
         });
       }
 
-      function invalidateRoadStyleOptionCacheAfterZoom() {
+      function restoreRuralRoadStylesAfterZoom() {
+        const visualTier = getRoadScaleTier(currentScaleDenominator);
+
         allRoads.forEach(function(road) {
-          if (!road) return;
+          if (road.layerId !== "rural" || !road._visible) return;
 
-          // 카카오맵은 확대·축소 과정에서 Polyline을 내부 재렌더링함.
-          // 이때 dash/dot/solid가 화면에서는 바뀌어도 _lastMapOptions에는
-          // 이전 값이 남아 setMapOptionsIfChanged가 재적용을 생략할 수 있음.
-          // 줌 종료 후 옵션 캐시를 비워 개설/미개설/계획구간 스타일을
-          // 현재 상태값 기준으로 반드시 다시 적용함.
-          road._visualTier = null;
-
+          syncRoadDerivedDisplayState(road);
+          applyRoadLineVisibility(road);
+          // Kakao can redraw attached paths without updating our option cache.
           getRoadVisualLines(road).forEach(function(line) {
             if (line) line._lastMapOptions = null;
           });
 
-          if (road.hitLine) {
-            road.hitLine._lastMapOptions = null;
-          }
-        });
-      }
-
-      function forceRuralRoadStatusStylesAfterZoom() {
-        allRoads.forEach(function(road) {
-          if (!road || road.layerId !== "rural" || !road._visible) return;
-
-          // 각 라인의 현재 속성값으로 상태를 다시 계산함.
-          normalizeRuralRoadAutoStatus(road.properties || {});
-          road.statusKey = getRoadStatusKey(
-            road.properties || {},
-            road.layerId
-          );
-          road.styleKey = getStyleKey(
-            road.properties || {},
-            road.layerId
-          );
-
-          const stack = getRoadLayerStack(road.styleKey);
-          const lines = getRoadVisualLines(road);
-
-          lines.forEach(function(line, index) {
-            if (!line) return;
-
-            const config = stack[index] || stack[0];
-            if (!config || config.visible === false) return;
-
-            const options = {
-              strokeColor: getRoadLayerDisplayColor(
-                road.styleKey,
-                config
-              ),
-              strokeWeight: mapStrokePx(
-                (road.statusKey === "UNOPENED" ||
-                 road.statusKey === "UNEXPANDED")
-                  ? Math.max(
-                      Number(config.width) || 1,
-                      STATUS_STYLES.UNOPENED_SIZE
-                    )
-                  : Number(config.width) || 1,
-                1
-              ),
-              strokeOpacity:
-                Math.max(
-                  0,
-                  Math.min(100, Number(config.opacity) || 0)
-                ) / 100,
-              strokeStyle: getRoadLayerStrokeStyle(
-                road,
-                config,
-                index
-              ),
-              zIndex: 40 - index
-            };
-
-            // 선택 시 정상화되는 것과 동일하게 실제 Polyline에
-            // 옵션을 직접 다시 써서 Kakao의 줌 재렌더링 상태를 덮어씀.
-            line.setOptions(options);
-            line._lastMapOptions = Object.assign({}, options);
-          });
-
-          applyRoadLineVisibility(road);
+          applyRoadNormalVisualStyle(road);
+          road._visualTier = visualTier;
         });
 
-        // 선택된 노선은 마지막에 다시 강조색만 적용함.
         if (selectedRoadGroupKey) {
-          setRoadGroupHighlight(
-            selectedRoadGroupKey,
-            true
-          );
+          setRoadGroupHighlight(selectedRoadGroupKey, true);
         }
       }
 
@@ -11514,7 +11450,7 @@
         );
       }
 
-      function restoreRoadsInStages() {
+      function restoreRoadsInStages(restoreZoomStyles) {
         const token = ++deferredRoadRestoreToken;
         const viewport = getBufferedViewportBox();
         const visualTier = getRoadScaleTier(currentScaleDenominator);
@@ -11572,11 +11508,9 @@
 
           updateLabels();
 
-          // 줌 복원 직후 모든 농어촌도로의 개설상태 표현을
-          // 선택 동작과 동일하게 직접 재적용함.
-          forceRuralRoadStatusStylesAfterZoom();
-
-          if (selectedRoadGroupKey) {
+          if (restoreZoomStyles) {
+            restoreRuralRoadStylesAfterZoom();
+          } else if (selectedRoadGroupKey) {
             setRoadGroupHighlight(selectedRoadGroupKey, true);
           }
         });
@@ -11661,7 +11595,12 @@
 
             if (topLine) {
               setMapOptionsIfChanged(topLine, {
-                strokeWeight: Math.max(2.2, getRoadStrokeWeight(road) - 0.8)
+                strokeWeight: Math.max(2.2, getRoadStrokeWeight(road) - 0.8),
+              strokeStyle: getRoadLayerStrokeStyle(
+                road,
+                getRoadLayerStack(road.styleKey)[topVisibleIndex],
+                topVisibleIndex
+              )
               });
             }
           } else {
@@ -11716,6 +11655,7 @@
 
       function beginMapInteraction() {
         cancelMapRefresh();
+        clearTimeout(zoomRestoreTimer);
         deferredRoadRestoreToken += 1;
         if (mapInteracting) return;
         mapInteracting = true;
@@ -11755,12 +11695,8 @@
 
         updateScale();
 
-        // 확대·축소가 끝난 뒤에는 Kakao Polyline의 내부 재렌더링과
-        // 옵션 캐시가 어긋날 수 있으므로 상태선 스타일을 강제로 재적용함.
-        if (roadStatusStyleRefreshPending) {
-          invalidateRoadStyleOptionCacheAfterZoom();
-          roadStatusStyleRefreshPending = false;
-        }
+        const restoreZoomStyles = roadStatusStyleRefreshPending;
+        roadStatusStyleRefreshPending = false;
 
         // 이동/확대축소 후 라벨 오버레이 실제 상태와 캐시가 어긋나지 않도록 매번 재판정
         Object.values(LAYERS).forEach(function(layer) {
@@ -11768,13 +11704,13 @@
         });
 
         if (wasWindowsDragFastMode || wasWindowsZoomFastMode || wasZoomLightMode) {
-          restoreRoadsInStages();
+          restoreRoadsInStages(restoreZoomStyles);
         } else {
           applyRoadVisibility();
           updateLabels();
-          forceRuralRoadStatusStylesAfterZoom();
-
-          if (selectedRoadGroupKey) {
+          if (restoreZoomStyles) {
+            restoreRuralRoadStylesAfterZoom();
+          } else if (selectedRoadGroupKey) {
             setRoadGroupHighlight(selectedRoadGroupKey, true);
           }
         }
@@ -11783,16 +11719,12 @@
         updateSelectedRouteBalloon();
         restoreSelectedRoadPopup();
 
-        // Kakao 벡터 레이어가 idle 직후 한 번 더 그려지는 경우까지 보정.
-        if (roadStatusStyleRefreshPending === false) {
-          setTimeout(function() {
-            if (
-              !mapInteracting &&
-              !windowsDragFastMode &&
-              !windowsZoomFastMode
-            ) {
-              forceRuralRoadStatusStylesAfterZoom();
-            }
+        if (restoreZoomStyles) {
+          const token = deferredRoadRestoreToken;
+          zoomRestoreTimer = setTimeout(function() {
+            zoomRestoreTimer = null;
+            if (token !== deferredRoadRestoreToken || mapInteracting) return;
+            restoreRuralRoadStylesAfterZoom();
           }, 120);
         }
 
@@ -11881,8 +11813,6 @@
         } else {
           setRoadZoomLightMode(true);
         }
-
-        clearTimeout(zoomRestoreTimer);
 
       });
 
@@ -15063,7 +14993,7 @@
         // 여러 겹 선이 서로 다른 두께를 가질 때 패턴이 어긋나는 것을 막기 위해
         // 최상단 선만 dash/dot 패턴을 담당하고 하단 레이어는 solid casing으로 표시.
         if (
-          layerIndex > 0 &&
+          layerIndex !== getTopVisibleRoadLineIndex(road) &&
           requestedStyle !== "solid"
         ) {
           return "solid";
