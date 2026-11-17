@@ -11276,6 +11276,7 @@
       let deferredRoadRestoreToken = 0;
       let zoomLightMode = false;
       let zoomRestoreTimer = null;
+      let roadStatusStyleRefreshPending = false;
 
       function hideLayerLabelsForInteraction() {
         Object.values(LAYERS).forEach(function(layer) {
@@ -11366,6 +11367,27 @@
           layer.labels.forEach(function(labelItem) {
             labelItem._visible = false;
           });
+        });
+      }
+
+      function invalidateRoadStyleOptionCacheAfterZoom() {
+        allRoads.forEach(function(road) {
+          if (!road) return;
+
+          // 카카오맵은 확대·축소 과정에서 Polyline을 내부 재렌더링함.
+          // 이때 dash/dot/solid가 화면에서는 바뀌어도 _lastMapOptions에는
+          // 이전 값이 남아 setMapOptionsIfChanged가 재적용을 생략할 수 있음.
+          // 줌 종료 후 옵션 캐시를 비워 개설/미개설/계획구간 스타일을
+          // 현재 상태값 기준으로 반드시 다시 적용함.
+          road._visualTier = null;
+
+          getRoadVisualLines(road).forEach(function(line) {
+            if (line) line._lastMapOptions = null;
+          });
+
+          if (road.hitLine) {
+            road.hitLine._lastMapOptions = null;
+          }
         });
       }
 
@@ -11659,6 +11681,13 @@
 
         updateScale();
 
+        // 확대·축소가 끝난 뒤에는 Kakao Polyline의 내부 재렌더링과
+        // 옵션 캐시가 어긋날 수 있으므로 상태선 스타일을 강제로 재적용함.
+        if (roadStatusStyleRefreshPending) {
+          invalidateRoadStyleOptionCacheAfterZoom();
+          roadStatusStyleRefreshPending = false;
+        }
+
         // 이동/확대축소 후 라벨 오버레이 실제 상태와 캐시가 어긋나지 않도록 매번 재판정
         Object.values(LAYERS).forEach(function(layer) {
           layer.labels.forEach(function(labelItem) { labelItem._visible = false; });
@@ -11690,6 +11719,7 @@
 
       // 실제 지도 이벤트를 사용해 비활성 wheel/단순 클릭이 레이어를 숨기지 않도록 함.
       kakao.maps.event.addListener(map, "zoom_start", function() {
+        roadStatusStyleRefreshPending = true;
         beginMapInteraction();
         if (IS_WINDOWS) {
           document.body.classList.add("map-interacting");
@@ -11738,6 +11768,7 @@
 
       // 줌 중에는 팝업만 유지하고, 도로 갱신은 idle에서 처리.
       kakao.maps.event.addListener(map, "zoom_changed", function() {
+        roadStatusStyleRefreshPending = true;
         beginMapInteraction();
         // 축척 이탈 즉시 실제 Polygon/Polyline을 제거하며 수동 ON은 유지함.
         syncTownshipBoundaryDisplay();
