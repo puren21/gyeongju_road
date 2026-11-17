@@ -9765,7 +9765,8 @@
     const $ = selector => panel.querySelector(selector);
     const keyOf = row => row.groupKey + "::" + row.index;
     const columns = () => layer === "city" ? cityColumns : commonColumns;
-    const rows = () => api.rows(layer);
+    let tableRows = [];
+    const rows = () => tableRows;
 
     function message(text, error) {
       const el = $("#roadTableMessage");
@@ -9867,7 +9868,9 @@
       panel.classList.remove("road-table-popup");
     }
     async function open(nextLayer) {
+      if (busy) return;
       layer = nextLayer;
+      if (!changes.size && !deleted.size) tableRows = api.rows(layer);
       selected.clear();
       $("#roadTableSearch").value = "";
       try { widths = JSON.parse(localStorage.getItem("gyeongju-table-widths-" + layer) || "{}"); }
@@ -9901,6 +9904,7 @@
       try {
         await api.load(layer);
         if (currentRequest !== requestId) return;
+        if (!changes.size && !deleted.size) tableRows = api.rows(layer);
         render();
         message("행 선택: 지도 이동 · Shift+클릭: 추가 선택 · 삭제한 행은 저장 전 취소할 수 있습니다.");
       } catch (error) {
@@ -9916,7 +9920,9 @@
     $("#roadTableEdit").onclick = () => { editing = !editing; setEditingUI(); };
     $("#roadTableSearch").oninput = render;
     $("#roadTableCancel").onclick = () => {
-      changes.clear(); deleted.clear(); selected.clear(); render();
+      changes.clear(); deleted.clear(); selected.clear();
+      tableRows = api.rows(layer);
+      render();
       message("저장하지 않은 수정과 삭제를 취소했습니다.");
     };
     $("#roadTableDelete").onclick = () => {
@@ -10012,12 +10018,12 @@
             message("차선·도로폭·연장은 0 이상의 숫자로 입력해 주세요.", true); return;
           }
         }
-        edits.push({ groupKey:row.groupKey, index:row.index, values:Object.assign({}, values) });
+        edits.push({ groupKey:row.groupKey, index:row.index, original:row.original, values:Object.assign({}, values) });
       }
       for (const rowKey of deleted) {
         const row = all.find(item => keyOf(item) === rowKey);
         if (!row) { message("삭제할 구간이 변경되었습니다. 테이블을 다시 열어 주세요.", true); return; }
-        removals.push({ groupKey:row.groupKey, index:row.index });
+        removals.push({ groupKey:row.groupKey, index:row.index, original:row.original });
       }
       busy = true;
       setEditingUI();
@@ -10027,6 +10033,7 @@
         changes.clear();
         deleted.clear();
         selected.clear();
+        tableRows = api.rows(layer);
         render();
         message(edits.length + "개 구간 수정, " + removals.length + "개 구간 삭제를 저장했습니다.");
       } catch (error) {
@@ -10038,6 +10045,8 @@
           for (const rowKey of deleted) {
             if (savedGroups.has(rowKey.slice(0, rowKey.lastIndexOf("::")))) deleted.delete(rowKey);
           }
+          tableRows = tableRows.filter(row => !savedGroups.has(row.groupKey))
+            .concat(api.rows(layer).filter(row => savedGroups.has(row.groupKey)));
           render();
         }
         message((savedGroups.size ? savedGroups.size + "개 노선은 저장됨. 나머지 " : "") +
@@ -17854,7 +17863,7 @@
       });
 
       function processRoadFeaturesInChunks(features, layerId) {
-        return new Promise(function(resolve) {
+        return new Promise(function(resolve, reject) {
           let index = 0;
           let skipped = 0;
           const total = features.length;
@@ -17869,7 +17878,12 @@
               (!deadline || deadline.timeRemaining() > 2 || deadline.didTimeout)
             ) {
               const before = allRoads.length;
-              addFeature(features[index], layerId);
+              try {
+                addFeature(features[index], layerId);
+              } catch (error) {
+                reject(new Error((index + 1) + "번째 도로 구간을 처리하지 못했습니다. " + error.message));
+                return;
+              }
               if (before === allRoads.length) skipped++;
               index++;
               processed++;
@@ -18181,28 +18195,10 @@
       }
 
       async function fetchOptionalRoadGeoJSON(fileName) {
-        try {
-          const response = await fetch(
-            encodeURI(fileName) + "?v=" + Date.now(),
-            { cache: "no-store", credentials: "same-origin" }
-          );
-          if (!response.ok) {
-            if (response.status === 404) return null;
-            throw new Error(fileName + " HTTP " + response.status);
-          }
-          const data = await response.json();
-          if (
-            !data ||
-            data.type !== "FeatureCollection" ||
-            !Array.isArray(data.features)
-          ) {
-            throw new Error(fileName + " 형식 오류");
-          }
-          return data;
-        } catch (error) {
-          console.warn(fileName + " 불러오기 실패", error);
-          return null;
-        }
+        const response = await fetch(encodeURI(fileName), { cache: "no-cache" });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(fileName + " HTTP " + response.status);
+        return validateRoadDataset(await response.json(), false);
       }
 
       function clearLegacyRoadDatasetStorage() {
@@ -18215,6 +18211,7 @@
       // ===== 기존 도로구간 비교 레이어 =====
       const baseRoadDatasetShapes = [];
       let loadedBaseRoadGeoJSON = null;
+      let baseRoadLoadState = "loading";
       let pendingBaseRoadGeoJSON = null;
       let pendingChangedRoadGeoJSON = null;
 
@@ -18368,7 +18365,29 @@
         updateRoadDatasetManagerStatus();
       }
 
-      function readRoadGeoJSONFile(file) {
+      function validateRoadDataset(data, requireRouteNumber) {
+        if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
+          throw new Error("GeoJSON FeatureCollection 형식이 아닙니다.");
+        }
+
+        data.features.forEach(function(feature, index) {
+          const lines = getLines(feature?.geometry);
+          const properties = feature?.properties;
+          if (feature?.type !== "Feature" || (properties != null &&
+              (typeof properties !== "object" || Array.isArray(properties))) ||
+              !Array.isArray(lines) || !lines.length || !lines.every(line =>
+                Array.isArray(line) && line.length >= 2 &&
+                line.every(point => normalizeCoordinate(point) !== null))) {
+            throw new Error((index + 1) + "번째 구간의 도로 형식 또는 좌표가 올바르지 않습니다.");
+          }
+          if (requireRouteNumber && getNumber(properties || {}, "rural") === "-") {
+            throw new Error((index + 1) + "번째 구간에 노선번호가 없습니다.");
+          }
+        });
+        return data;
+      }
+
+      function readRoadGeoJSONFile(file, requireRouteNumber) {
         return new Promise(function(resolve, reject) {
           if (!file) {
             reject(new Error("파일을 선택해 주세요."));
@@ -18379,21 +18398,9 @@
           reader.onload = function() {
             try {
               const data = JSON.parse(String(reader.result || ""));
-              if (
-                !data ||
-                data.type !== "FeatureCollection" ||
-                !Array.isArray(data.features)
-              ) {
-                throw new Error("GeoJSON FeatureCollection 형식이 아닙니다.");
+              if (!validateRoadDataset(data, requireRouteNumber).features.length) {
+                throw new Error("파일에 도로 구간이 없습니다.");
               }
-
-              const hasLine = data.features.some(function(feature) {
-                return getLines(feature && feature.geometry).length > 0;
-              });
-              if (!hasLine) {
-                throw new Error("표시 가능한 LineString/MultiLineString이 없습니다.");
-              }
-
               resolve(data);
             } catch (error) {
               reject(error);
@@ -18422,9 +18429,10 @@
         if (baseStatus) {
           const data = pendingBaseRoadGeoJSON || savedBaseRoadData();
           const count = data && Array.isArray(data.features) ? data.features.length : 0;
-          baseStatus.textContent = count
-            ? count.toLocaleString("ko-KR") + "개 구간"
-            : "비어 있음";
+          baseStatus.textContent = pendingBaseRoadGeoJSON || baseRoadLoadState === "ready"
+            ? (count ? count.toLocaleString("ko-KR") + "개 구간" : "비어 있음")
+            : baseRoadLoadState === "error" ? "불러오기 실패" : "불러오는 중";
+          document.getElementById("baseRoadDatasetRetry").hidden = baseRoadLoadState !== "error";
         }
 
         if (changedStatus) {
@@ -18647,6 +18655,7 @@
                   '<input id="baseRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
                 '</label>' +
                 '<button id="baseRoadDatasetSave" type="button">저장</button>' +
+                '<button id="baseRoadDatasetRetry" type="button" hidden>다시 불러오기</button>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -18842,9 +18851,11 @@
 
         changedFile.addEventListener("change", async function() {
           try {
-            pendingChangedRoadGeoJSON = await readRoadGeoJSONFile(this.files && this.files[0]);
+            pendingChangedRoadGeoJSON = await readRoadGeoJSONFile(this.files && this.files[0], true);
             updateRoadDatasetManagerStatus();
           } catch (error) {
+            pendingChangedRoadGeoJSON = null;
+            updateRoadDatasetManagerStatus();
             alert("변경 도로구간 파일을 불러오지 못했습니다.\\n\\n" + error.message);
             this.value = "";
           }
@@ -18885,6 +18896,7 @@
             );
 
             loadedBaseRoadGeoJSON = pendingBaseRoadGeoJSON;
+            baseRoadLoadState = "ready";
             pendingBaseRoadGeoJSON = null;
             drawBaseRoadDataset(loadedBaseRoadGeoJSON);
             updateRoadDatasetManagerStatus();
@@ -18924,7 +18936,7 @@
             rememberRoadGithubToken(token);
             updateRoadGithubConnectionStatus("GitHub 연결됨", true);
 
-            const replacingData = pendingChangedRoadGeoJSON;
+            const replacingData = validateRoadDataset(pendingChangedRoadGeoJSON, true);
 
             await overwriteGithubRoadFile(
               GYEONGJU_GITHUB.changedPath,
@@ -18954,25 +18966,38 @@
           }
         });
 
-        (async function() {
-          loadedBaseRoadGeoJSON =
-            await fetchOptionalRoadGeoJSON(GYEONGJU_GITHUB.basePath);
-
-          if (loadedBaseRoadGeoJSON) {
-            drawBaseRoadDataset(loadedBaseRoadGeoJSON);
-          }
-
-          setBaseRoadDatasetVisible(baseRoadDatasetVisible);
-          setChangedRoadDatasetVisible(changedRoadDatasetVisible);
+        async function loadBaseRoadDataset() {
+          baseRoadLoadState = "loading";
           updateRoadDatasetManagerStatus();
-        })();
+          try {
+            const data = await fetchOptionalRoadGeoJSON(GYEONGJU_GITHUB.basePath);
+            if (baseRoadLoadState !== "loading") return;
+            loadedBaseRoadGeoJSON = data;
+            if (!pendingBaseRoadGeoJSON) drawBaseRoadDataset(data);
+            baseRoadLoadState = "ready";
+          } catch (error) {
+            if (baseRoadLoadState !== "loading") return;
+            baseRoadLoadState = "error";
+            console.warn(error);
+          } finally {
+            updateRoadDatasetManagerStatus();
+          }
+        }
+
+        document.getElementById("baseRoadDatasetRetry").addEventListener("click", loadBaseRoadDataset);
+        setBaseRoadDatasetVisible(baseRoadDatasetVisible);
+        setChangedRoadDatasetVisible(changedRoadDatasetVisible);
+        loadBaseRoadDataset();
       }
 
       window.installRoadDatasetManager = installRoadDatasetManager;
 
       function normalizeCoordinate(coordinate) {
-        const x = Number(coordinate && coordinate[0]);
-        const y = Number(coordinate && coordinate[1]);
+        if (!Array.isArray(coordinate) || coordinate.length < 2 ||
+            !coordinate.slice(0, 2).every(value => typeof value === "number" ||
+              (typeof value === "string" && value.trim() !== ""))) return null;
+        const x = Number(coordinate[0]);
+        const y = Number(coordinate[1]);
 
         if (!Number.isFinite(x) || !Number.isFinite(y)) {
           console.warn("잘못된 좌표를 건너뜁니다.", coordinate);
@@ -19751,17 +19776,34 @@
         showInfo(position || map.getCenter(), group.key, road);
       }
 
+      function roadTableSnapshot(road) {
+        const path = (road.pathFine || []).map(point => [point.getLng(), point.getLat()]);
+        return JSON.stringify([road.properties, path]);
+      }
+
+      function verifyRoadTableTargets(items) {
+        for (const item of items) {
+          const road = groups.get(item.groupKey)?.roads[item.index];
+          if (!road || road !== item.original.road || roadTableSnapshot(road) !== item.original.snapshot) {
+            throw new Error("지도에서 구간이 변경되었습니다. 표에서 취소를 눌러 새로 불러와 주세요.");
+          }
+        }
+      }
+
       async function saveRuralTableChanges(edits, removals) {
         if (roadEditSaving || roadEditSessionGroupKey) {
           throw new Error("지도에서 진행 중인 편집을 먼저 종료해 주세요.");
         }
-        const keys = new Set(edits.concat(removals).map(item => item.groupKey));
+        const targets = edits.concat(removals);
+        verifyRoadTableTargets(targets);
+        const keys = new Set(targets.map(item => item.groupKey));
         const savedGroups = [];
         roadEditSaving = true;
         try {
           for (const key of keys) {
             const group = groups.get(key);
             if (!group || group.layerId !== "rural") throw new Error("농어촌도로 구간을 찾을 수 없습니다.");
+            verifyRoadTableTargets(targets.filter(item => item.groupKey === key));
             const segments = serializeRoadGroupSegments(group);
             const groupEdits = edits.filter(item => item.groupKey === key);
             const deleted = new Set(removals.filter(item => item.groupKey === key).map(item => item.index));
@@ -19819,7 +19861,8 @@
               number: group.number,
               index: index,
               layerId: "rural",
-              properties: road.properties,
+              original: { road, snapshot: roadTableSnapshot(road) },
+              properties: { ...road.properties },
               status: roadStatusLabel(road.statusKey),
               length: roadGeometryLengthKm(road).toFixed(1)
             })));
