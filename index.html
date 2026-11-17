@@ -7,6 +7,7 @@
   <title>경주시 농어촌도로 지도</title>
 
   <style>
+    #map path[data-road-square-dash] { stroke-linecap: butt !important; }
     * {
       box-sizing: border-box;
       font-family: Arial, "Apple SD Gothic Neo", sans-serif;
@@ -10064,6 +10065,7 @@
       const [dash, gap] = path.style.strokeDasharray.split(",").map(parseFloat);
       const patterned = width > 0 && (dash === 0.5 ||
         (dash === 3 * width && gap === 4 * width));
+      path.toggleAttribute("data-road-square-dash", patterned && dash !== 0.5);
       let outline = underlays.get(path);
 
       if (!patterned || !mapElement.contains(path)) {
@@ -10080,6 +10082,7 @@
       outline.setAttribute("d", path.getAttribute("d") || "");
       outline.setAttribute("transform", path.getAttribute("transform") || "");
       outline.style.cssText = path.style.cssText;
+      outline.toggleAttribute("data-road-square-dash", dash !== 0.5);
       outline.style.fill = "none";
       outline.style.stroke = "white";
       outline.style.strokeOpacity = "1";
