@@ -17803,13 +17803,17 @@
         });
       });
 
-      const ruralTableReady = roadsReadyPromise
-      .then(async function () {
-        try {
-          await loadRuralOnlineRoadEdits();
-        } catch (error) {
+      // 파일 처리와 편집정보 조회는 독립적이다. 편집정보는 노선이 만들어진 뒤 적용한다.
+      const initialRuralEdits = Promise.resolve()
+        .then(fetchRuralOnlineRoadEdits)
+        .catch(function(error) {
           console.warn("온라인 농어촌도로 편집정보를 불러오지 못했습니다.", error);
-        }
+          return [];
+        });
+
+      const ruralTableReady = Promise.all([roadsReadyPromise, initialRuralEdits])
+      .then(function ([, edits]) {
+        applyRuralOnlineRoadEdits(edits);
 
         // 첫 화면을 그리기 전에 모든 농어촌도로의 자동 개설여부를 확정.
         allRoads.forEach(function(road) {
@@ -21223,8 +21227,9 @@
         return "sacheon-edit:" + kind + ":" + String(group.number || group.key || "");
       }
 
-      async function loadRuralOnlineRoadEdits() {
-        const prefix = "sacheon-edit:rural:";
+      const RURAL_ONLINE_EDIT_PREFIX = "sacheon-edit:rural:";
+
+      async function fetchRuralOnlineRoadEdits() {
         const edits = [];
         const pageSize = 200;
         const signal = AbortSignal.timeout(8000);
@@ -21232,7 +21237,7 @@
         for (let offset = 0; ; offset += pageSize) {
           const response = await fetch(
             SACHEON_MEMO_REST_URL +
-            "/route_memos?route_number=like." + encodeURIComponent(prefix + "*") +
+            "/route_memos?route_number=like." + encodeURIComponent(RURAL_ONLINE_EDIT_PREFIX + "*") +
             "&select=route_number,memo&order=route_number.asc" +
             "&limit=" + pageSize + "&offset=" + offset,
             { headers: SACHEON_MEMO_HEADERS, cache: "no-store", signal: signal }
@@ -21244,8 +21249,12 @@
           if (rows.length < pageSize) break;
         }
 
+        return edits;
+      }
+
+      function applyRuralOnlineRoadEdits(edits) {
         edits.forEach(function(row) {
-          const group = groups.get("rural::" + row.route_number.slice(prefix.length));
+          const group = groups.get("rural::" + row.route_number.slice(RURAL_ONLINE_EDIT_PREFIX.length));
           if (!group || !row.memo) return;
           try {
             applyOnlineRoadEdits(group, JSON.parse(row.memo), false);
