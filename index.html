@@ -7,6 +7,51 @@
   <title>경주시 농어촌도로 지도</title>
 
   <style>
+    #ruralAttributeTableOpen {
+      flex: 0 0 auto;
+      margin: 4px 10px 8px;
+      padding: 7px 10px;
+      border: 1px solid #d6e0ef;
+      border-radius: 7px;
+      background: #f3f7ff;
+      color: #174176;
+      text-align: left;
+      font-weight: 700;
+    }
+    #ruralAttributeTable {
+      width: min(1100px, calc(100vw - 24px));
+      max-width: none;
+      padding: 0;
+      border: 1px solid #d6e0ef;
+      border-radius: 12px;
+      color: #17263b;
+    }
+    #ruralAttributeTable::backdrop { background: rgb(15 25 40 / 35%); }
+    #ruralAttributeTable header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+    }
+    #ruralAttributeTable header form { margin-left: auto; }
+    #ruralAttributeTable input, #ruralAttributeTable button {
+      padding: 6px 9px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: #174176;
+    }
+    .attribute-table-scroll { max-height: 65dvh; overflow: auto; }
+    #ruralAttributeTable table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    #ruralAttributeTable th, #ruralAttributeTable td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e1e7ef;
+      white-space: nowrap;
+      text-align: left;
+    }
+    #ruralAttributeTable th { position: sticky; top: 0; background: #edf2f9; }
+    #ruralAttributeTable tbody tr:nth-child(even) { background: #f8fafc; }
     * {
       box-sizing: border-box;
       font-family: Arial, "Apple SD Gothic Neo", sans-serif;
@@ -9813,6 +9858,7 @@
       <button type="button" class="road-kind-filter active" data-kind="farm">농도</button>
     </div>
 
+    <button id="ruralAttributeTableOpen" type="button">속성테이블 보기</button>
     <div class="search-result-summary">
       <span>검색결과</span>
       <span id="searchResultCount">0건</span>
@@ -9829,6 +9875,18 @@
       <div id="searchEmpty">검색 결과가 없습니다.</div>
     </div>
   </div>
+
+  <dialog id="ruralAttributeTable" aria-labelledby="ruralAttributeTableTitle">
+    <header>
+      <strong id="ruralAttributeTableTitle">농어촌도로 속성테이블</strong>
+      <input type="search" placeholder="노선·속성 검색" aria-label="노선·속성 검색">
+      <span role="status"></span>
+      <form method="dialog"><button type="submit">닫기</button></form>
+    </header>
+    <div class="attribute-table-scroll" tabindex="0" aria-label="농어촌도로 구간 목록">
+      <table><thead></thead><tbody></tbody></table>
+    </div>
+  </dialog>
 
   <div id="roadLayerEditorPanel" role="dialog" aria-label="레이어 설정">
     <div class="road-layer-editor-header">
@@ -19370,9 +19428,9 @@
           });
       }
 
-      function openSelectedGroupInfoFromList(group) {
+      function openSelectedGroupInfoFromList(group, requestedRoad) {
         if (!group) return;
-        const road = group.roads && group.roads.length ? group.roads[0] : null;
+        const road = group.roads.includes(requestedRoad) ? requestedRoad : group.roads[0];
         let position = null;
 
         if (road) {
@@ -19396,7 +19454,71 @@
         showInfo(position || map.getCenter(), group.key, road);
       }
 
-      function selectGroup(groupKey) {
+      const ruralAttributeTable = document.getElementById("ruralAttributeTable");
+      const ruralAttributeSearch = ruralAttributeTable.querySelector("input");
+      const ruralAttributeRows = ruralAttributeTable.querySelector("tbody");
+      const ruralAttributeCount = ruralAttributeTable.querySelector('[role="status"]');
+      const ruralAttributeHeaders = [
+        "노선번호", "구간", "구분", "노선상태", "차선", "도로폭(m)",
+        "연장(km)", "기점", "종점", "비고", "기타"
+      ];
+      const headerRow = ruralAttributeTable.querySelector("thead").insertRow();
+      ruralAttributeHeaders.forEach(function (label) {
+        const cell = document.createElement("th");
+        cell.scope = "col";
+        cell.textContent = label;
+        headerRow.appendChild(cell);
+      });
+      const routeCollator = new Intl.Collator("ko", { numeric: true });
+
+      function renderRuralAttributeRows() {
+        const query = ruralAttributeSearch.value.trim().toLowerCase();
+        const tableBody = document.createDocumentFragment();
+        const ruralGroups = Array.from(groups.values())
+          .filter(group => group.layerId === "rural")
+          .sort((left, right) => routeCollator.compare(left.number, right.number));
+        let count = 0;
+
+        ruralGroups.forEach(function (group) {
+          group.roads.forEach(function (road, index) {
+            const props = road.properties || {};
+            const values = [
+              group.number, index + 1, props["구분"] || props.GUBUN || props.gubun,
+              roadStatusLabel(road.statusKey), props["차선"], props["도로폭"],
+              formatRoadLengthKm(roadGeometryLengthKm(road)),
+              props["기점"] || props["시점"], props["종점"], props["비고"],
+              props["기타"] || props["특이사항"]
+            ];
+            if (query && !values.some(value => String(value ?? "").toLowerCase().includes(query))) return;
+
+            const row = document.createElement("tr");
+            values.forEach(function (value) {
+              row.insertCell().textContent = value ?? "—";
+            });
+            const link = document.createElement("button");
+            link.type = "button";
+            link.textContent = group.number;
+            link.setAttribute("aria-label", group.number + " " + (index + 1) + "구간 선택");
+            link.addEventListener("click", function () {
+              ruralAttributeTable.close();
+              selectGroup(group.key, road);
+            });
+            row.cells[0].replaceChildren(link);
+            tableBody.appendChild(row);
+            count += 1;
+          });
+        });
+        ruralAttributeRows.replaceChildren(tableBody);
+        ruralAttributeCount.textContent = count ? count + "개 구간" : "표시할 구간이 없습니다.";
+      }
+
+      document.getElementById("ruralAttributeTableOpen").addEventListener("click", function () {
+        renderRuralAttributeRows();
+        ruralAttributeTable.showModal();
+      });
+      ruralAttributeSearch.addEventListener("input", renderRuralAttributeRows);
+
+      function selectGroup(groupKey, road) {
         const group = groups.get(groupKey);
 
         if (!group) return;
@@ -19445,7 +19567,7 @@
             if (selectedKey === groupKey && selectedRoadGroupKey === groupKey) {
               setRoadGroupHighlight(groupKey, true);
               updateSelectedRouteBalloon();
-              openSelectedGroupInfoFromList(group);
+              openSelectedGroupInfoFromList(group, road);
             }
           };
           kakao.maps.event.addListener(map, "idle", selectionIdleHandler);
@@ -19464,7 +19586,7 @@
           }, 0);
         } else {
           setRoadGroupHighlight(groupKey, true);
-          openSelectedGroupInfoFromList(group);
+          openSelectedGroupInfoFromList(group, road);
         }
       }
 
@@ -26747,7 +26869,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
   roadPage.id = "roadMenuRoadPage";
   roadPage.className = "road-menu-page";
 
-  [searchWrap, kindFilters, resultSummary, listContent].forEach(function(el) {
+  const tableButton = document.getElementById("ruralAttributeTableOpen");
+  [searchWrap, tableButton, kindFilters, resultSummary, listContent].forEach(function(el) {
     roadPage.appendChild(el);
   });
 
