@@ -18522,6 +18522,7 @@
                 '<button id="roadGithubForget" type="button">인증정보 삭제</button>' +
               '</div>' +
               '<div class="road-github-help">한 번 저장하면 이 브라우저에서 계속 사용합니다. 인증정보는 index.html에 포함되지 않습니다.</div>' +
+              '<div id="roadGithubSavePrompt" class="road-github-help" role="status"></div>' +
             '</div>' +
           '</div>' +
 
@@ -18616,6 +18617,14 @@
           if (name === "base" && !open) cancelDrawing();
         }
 
+        const savePrompt = document.getElementById("roadGithubSavePrompt");
+        function requestRoadSaveToken(datasetLabel) {
+          setRoadCompactExpanded("github", true);
+          savePrompt.textContent = "입력한 도로는 저장 대기 중입니다. 토큰을 입력한 뒤 " + datasetLabel + "의 저장을 다시 눌러 주세요.";
+          tokenInput?.focus();
+          tokenInput?.scrollIntoView({ block: "nearest" });
+        }
+
         manager.querySelectorAll("[data-road-compact-toggle]").forEach(function(head) {
           const name = head.dataset.roadCompactToggle;
 
@@ -18681,7 +18690,7 @@
               }
 
               updateRoadGithubConnectionStatus("GitHub 연결됨", true);
-              alert("GitHub 저장 설정을 프로그램에 저장했습니다.");
+              if (!savePrompt.textContent) alert("GitHub 저장 설정을 프로그램에 저장했습니다.");
             } catch (error) {
               updateRoadGithubConnectionStatus("GitHub 연결 실패", false);
               alert("GitHub 인증 실패\\n\\n" + error.message);
@@ -18944,8 +18953,7 @@
 
           const token = getRoadGithubToken();
           if (!token) {
-            alert("GitHub 토큰을 입력한 후 저장해 주세요.");
-            if (tokenInput) tokenInput.focus();
+            requestRoadSaveToken("변경 도로구간");
             return;
           }
 
@@ -18966,6 +18974,7 @@
               "Save proposed road segments"
             );
 
+            savePrompt.textContent = "";
             loadedBaseRoadGeoJSON = savingData;
             baseRoadLoadState = "ready";
             if (pendingBaseRoadGeoJSON === pendingAtSave) pendingBaseRoadGeoJSON = null;
@@ -18993,8 +19002,7 @@
 
           const token = getRoadGithubToken();
           if (!token) {
-            alert("GitHub 토큰을 입력한 후 저장해 주세요.");
-            if (tokenInput) tokenInput.focus();
+            requestRoadSaveToken("기존 도로구간");
             return;
           }
 
