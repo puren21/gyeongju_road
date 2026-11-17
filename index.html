@@ -17037,29 +17037,12 @@
       }
 
       function showAllRoadList() {
-        let cityCount = 0;
-        let ruralCount = 0;
-        const activeCategory = window.sacheonRoadCategoryMode || "rural";
+        filterRoadList("");
+      }
 
-        document.querySelectorAll(".list-item").forEach(function(item) {
-          const group = groups.get(item.dataset.key);
-          const categoryMatch = !!group && (activeCategory === "city" ? group.layerId === "city" : group.layerId !== "city");
-          const visible = categoryMatch && isRoadGroupKindVisible(group);
-          item.style.display = visible ? "block" : "none";
-
-          if (visible && group) {
-            if (group.layerId === "city") cityCount++;
-            else ruralCount++;
-          }
-        });
-
-        document.getElementById("cityListTitle").style.display =
-          cityCount ? "block" : "none";
-        document.getElementById("ruralListTitle").style.display =
-          ruralCount ? "block" : "none";
-
-        document.getElementById("searchEmpty").style.display =
-          (cityCount + ruralCount) ? "none" : "block";
+      function isRoadDatasetListed(group) {
+        return group.layerId !== "rural" ||
+          (group.proposed ? baseRoadDatasetVisible : changedRoadDatasetVisible);
       }
 
       function updateRoadSearchCount(count) {
@@ -17068,7 +17051,7 @@
           count = Array.from(document.querySelectorAll(".list-item")).filter(function(item) {
             const group = groups.get(item.dataset.key);
             const categoryMatch = !!group && (activeCategory === "city" ? group.layerId === "city" : group.layerId !== "city");
-            return categoryMatch && isRoadGroupKindVisible(group);
+            return categoryMatch && isRoadDatasetListed(group) && isRoadGroupKindVisible(group);
           }).length;
         }
         const resultCount = document.getElementById("searchResultCount");
@@ -17084,7 +17067,8 @@
         document.querySelectorAll(".list-item").forEach(function(item) {
           const group = groups.get(item.dataset.key);
           const categoryMatch = !!group && (activeCategory === "city" ? group.layerId === "city" : group.layerId !== "city");
-          const visible = categoryMatch && roadNumberMatches(group, query) && isRoadGroupKindVisible(group);
+          const visible = categoryMatch && isRoadDatasetListed(group) &&
+            roadNumberMatches(group, query) && isRoadGroupKindVisible(group);
           item.style.display = visible ? "block" : "none";
 
           if (visible && group) {
@@ -18274,6 +18258,7 @@
       function setBaseRoadDatasetVisible(visible) {
         baseRoadDatasetVisible = !!visible;
         try { localStorage.setItem("gyeongjuBaseRoadVisible", visible ? "1" : "0"); } catch (error) {}
+        filterRoadList(roadSearch.value);
         invalidateRoadVisibilityCache();
         applyRoadVisibility();
         updateLabels();
@@ -18282,6 +18267,7 @@
       function setChangedRoadDatasetVisible(visible) {
         changedRoadDatasetVisible = !!visible;
         try { localStorage.setItem("gyeongjuChangedRoadVisible", visible ? "1" : "0"); } catch (error) {}
+        filterRoadList(roadSearch.value);
         invalidateRoadVisibilityCache();
         applyRoadVisibility();
         updateLabels();
