@@ -9,7 +9,7 @@
   <link rel="preload" href="Township%20Boundary.geojson" as="fetch" crossorigin="anonymous">
 
   <style>
-    #baseRoadDatasetRetry[hidden], #changedRoadDrawing[hidden], #changedRoadFields[hidden] { display: none; }
+    #baseRoadDatasetRetry[hidden], #changedRoadDrawing[hidden], #changedRoadFields[hidden] { display: none !important; }
     #changedRoadDrawingHelp { margin: 0 0 8px; font-size: 13px; }
     #changedRoadFields .road-dataset-actions { margin-top: 10px; }
     #map path[data-road-square-dash] { stroke-linecap: butt !important; }
@@ -26194,7 +26194,7 @@
           }
 
           // 편집 모드가 활성화된 동안에는 지도 빈 곳을 클릭해도 편집 상태/창을 유지함.
-          if (roadEditSessionGroupKey || roadGeometryEditState) {
+          if (roadEditSessionGroupKey || roadGeometryEditState || closeChangedRoadDrawing) {
             return;
           }
           closeRoadPopup();
