@@ -7,12 +7,42 @@
   <title>경주시 농어촌도로 지도</title>
 
   <style>
-    /* Kakao renders dot strokes as 0.5px dashes with round caps. */
-    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 0.5,"] {
-      filter: drop-shadow(0.65px 0 0 white)
-              drop-shadow(-0.65px 0 0 white)
-              drop-shadow(0 0.65px 0 white)
-              drop-shadow(0 -0.65px 0 white);
+    /* Kakao uses 0.5px dashes for dots and a 3:4 pattern for road dashes. */
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 0.5,"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 3, 4;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 6, 8;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 9, 12;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 12, 16;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 15, 20;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 18, 24;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 21, 28;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 24, 32;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 27, 36;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 30, 40;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 33, 44;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 36, 48;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 39, 52;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 42, 56;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 45, 60;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 48, 64;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 51, 68;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 54, 72;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 57, 76;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 60, 80;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 63, 84;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 66, 88;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 69, 92;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 72, 96;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 75, 100;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 78, 104;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 81, 108;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 84, 112;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 87, 116;"],
+    #map path[id^="daum-maps-shape-"][style*="stroke-dasharray: 90, 120;"] {
+      filter: drop-shadow(1px 0 0 white)
+              drop-shadow(-1px 0 0 white)
+              drop-shadow(0 1px 0 white)
+              drop-shadow(0 -1px 0 white);
     }
 
     * {
