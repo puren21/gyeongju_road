@@ -10346,6 +10346,7 @@
       // 도로구간 비교 레이어
       // 현재 roads.geojson(또는 저장한 변경 GeoJSON)은 "변경 도로구간"으로 사용함.
       let changedRoadDatasetVisible = true;
+      let ruralOnlineEditsReady = false;
       let baseRoadDatasetVisible = true;
 
       let selectedTownshipName = null;
@@ -11399,7 +11400,7 @@
 
       function isRoadDatasetVisible(road) {
         if (!road) return false;
-        if (road.layerId === "rural") return changedRoadDatasetVisible;
+        if (road.layerId === "rural") return ruralOnlineEditsReady && changedRoadDatasetVisible;
         return true;
       }
 
@@ -17372,7 +17373,13 @@
       });
 
       roadsReadyPromise
-      .then(function () {
+      .then(async function () {
+        try {
+          await loadRuralOnlineRoadEdits();
+        } catch (error) {
+          console.warn("온라인 농어촌도로 편집정보를 불러오지 못했습니다.", error);
+        }
+
         // 첫 화면을 그리기 전에 모든 농어촌도로의 자동 개설여부를 확정.
         allRoads.forEach(function(road) {
           if (!road || road.layerId !== "rural") return;
@@ -17389,6 +17396,7 @@
           }
         });
 
+        ruralOnlineEditsReady = true;
         buildGroupLabels();
         makeLists();
         refreshAllRoadJoinLines();
@@ -20676,6 +20684,38 @@
         return "sacheon-edit:" + kind + ":" + String(group.number || group.key || "");
       }
 
+      async function loadRuralOnlineRoadEdits() {
+        const prefix = "sacheon-edit:rural:";
+        const edits = [];
+        const pageSize = 200;
+        const signal = AbortSignal.timeout(8000);
+
+        for (let offset = 0; ; offset += pageSize) {
+          const response = await fetch(
+            SACHEON_MEMO_REST_URL +
+            "/route_memos?route_number=like." + encodeURIComponent(prefix + "*") +
+            "&select=route_number,memo&order=route_number.asc" +
+            "&limit=" + pageSize + "&offset=" + offset,
+            { headers: SACHEON_MEMO_HEADERS, cache: "no-store", signal: signal }
+          );
+          if (!response.ok) throw new Error("HTTP " + response.status);
+
+          const rows = await response.json();
+          edits.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+
+        edits.forEach(function(row) {
+          const group = groups.get("rural::" + row.route_number.slice(prefix.length));
+          if (!group || !row.memo) return;
+          try {
+            applyOnlineRoadEdits(group, JSON.parse(row.memo), false);
+          } catch (error) {
+            console.warn("농어촌도로 편집정보를 적용하지 못했습니다.", group.number, error);
+          }
+        });
+      }
+
       async function fetchOnlineRoadEdits(group) {
         const editKey = sacheonRoadEditKey(group);
         if (!editKey) return null;
@@ -20926,6 +20966,7 @@
         if (!group || !Array.isArray(group._segmentJoinLines)) return;
 
         const show =
+          ruralOnlineEditsReady &&
           changedRoadDatasetVisible &&
           LAYERS.rural.visible &&
           isRoadLayerVisibleAtScale("rural") &&
@@ -21448,7 +21489,7 @@
         return true;
       }
 
-      function applyOnlineRoadEdits(group, payload) {
+      function applyOnlineRoadEdits(group, payload, refresh = true) {
         if (!group || !payload || typeof payload !== "object") return false;
         let changed = false;
 
@@ -21502,6 +21543,8 @@
 
         if (changed) {
           recalcGroupBounds(group);
+
+          if (!refresh) return true;
 
           const newLabelPosition = midpointAcrossPaths(group.paths);
           LAYERS[group.layerId].labels.forEach(function(labelItem) {
@@ -24864,7 +24907,9 @@
           return;
         }
 
-        // 온라인에 저장된 편집정보가 있으면 즉시 불러와 현재 노선에 반영.
+        // 농어촌도로는 최초 표시 전에 온라인 편집정보를 적용한다.
+        if (group.layerId === "rural") return;
+
         syncOnlineRoadEdits(groupKey)
           .then(function(changed) {
             if (!changed) return;
