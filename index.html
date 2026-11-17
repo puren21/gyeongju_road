@@ -15011,8 +15011,11 @@
 
       function isRoadVisualLineEnabled(road, config, index, topVisibleIndex) {
         if (config && config.visible === false) return false;
-        // A solid casing fills the gaps of the patterned stroke, especially
-        // when selection gives both lines the same color.
+        // 계획구간의 점선 아래에도 설정된 흰색 외곽선을 표시합니다.
+        if (road.layerId === "rural" && road.statusKey === "PLAN" && config &&
+            getRoadLayerDisplayColor(road.styleKey, config).toUpperCase() === "#FFFFFF") {
+          return true;
+        }
         return !hasPatternedRuralStroke(road) || index === topVisibleIndex;
       }
 
