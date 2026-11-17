@@ -9771,12 +9771,13 @@
     }
     function currentValue(row, key) {
       const pending = changes.get(keyOf(row));
-      if (key === "status" && row.layerId === "rural" && api.ruralStatus) {
-        return api.ruralStatus(Object.assign({}, row.properties, {
-          GUBUN: pending && pending.gubun !== undefined ? pending.gubun : row.properties.GUBUN,
-          "차선": pending && pending.lane !== undefined ? pending.lane : row.properties["차선"],
-          "도로폭": pending && pending.width !== undefined ? pending.width : row.properties["도로폭"]
-        }));
+      if (key === "status" && pending && row.layerId === "rural" && api.ruralStatus &&
+          ["gubun", "lane", "width"].some(field => pending[field] !== undefined)) {
+        const properties = { ...row.properties };
+        if (pending.gubun !== undefined) properties["구분"] = pending.gubun;
+        if (pending.lane !== undefined) properties["차선"] = pending.lane;
+        if (pending.width !== undefined) properties["도로폭"] = pending.width;
+        return api.ruralStatus(properties);
       }
       return pending && Object.prototype.hasOwnProperty.call(pending, key) ? pending[key] : valueOf(row, key);
     }
@@ -19855,7 +19856,10 @@
               length: roadGeometryLengthKm(road).toFixed(1)
             })));
         },
-        ruralStatus: normalizeRuralRoadAutoStatus,
+        ruralStatus: function (properties) {
+          normalizeRuralRoadAutoStatus(properties);
+          return roadStatusLabel(getRoadStatusKey(properties, "rural"));
+        },
         select: function (key, index) {
           const group = groups.get(key);
           if (group && !roadEditSessionGroupKey) selectGroup(key, group.roads[index]);
@@ -26135,6 +26139,7 @@
                 row("기점", joinValues(uniqueValues(list, "기점"))) +
                 row("종점", joinValues(uniqueValues(list, "종점"))) +
                 row("특이사항", safe(current["특이사항"])) +
+                (group.roads.includes(road) ? row("선택 구간", group.roads.indexOf(road) + 1) : "") +
                 row("개설여부", roadStatusLabel(currentStatus))
               )) +
           '</div>' +
