@@ -13000,8 +13000,9 @@
         if (roadGeometryEditState) {
           event.stopPropagation();
 
-          if (roadGeometryEditState.toolActive) {
-            finishRoadGeometryToolWithoutSave(roadGeometryEditState);
+          const state = roadGeometryEditState;
+          if (state.toolActive && !handleRoadGeometryVertexContextMenu(state, event)) {
+            finishRoadGeometryToolWithoutSave(state);
           }
           return;
         }
@@ -21774,6 +21775,40 @@
         );
       }
 
+      function handleRoadGeometryVertexContextMenu(state, event) {
+        if (state.mode !== "vertex" || !state.markers.length) return false;
+
+        const bounds = document.getElementById("map").getBoundingClientRect();
+        const projection = map.getProjection();
+        const x = event.clientX - bounds.left;
+        const y = event.clientY - bounds.top;
+        let closestIndex = -1;
+        let closestDistance = Infinity;
+
+        state.workingPath.forEach(function(position, index) {
+          const point = projection.containerPointFromCoords(position);
+          const dx = point.x - x;
+          const dy = point.y - y;
+          const distance = dx * dx + dy * dy;
+          if (Math.abs(dx) <= 12 && Math.abs(dy) <= 12 && distance < closestDistance) {
+            closestIndex = index;
+            closestDistance = distance;
+          }
+        });
+
+        if (closestIndex === -1) return false;
+        // 연결된 도로의 끝점과 선형의 최소 두 점을 유지합니다.
+        if (closestIndex === 0 || closestIndex === state.workingPath.length - 1) return true;
+
+        state.workingPath.splice(closestIndex, 1);
+        setRoadEditDirty(true);
+        state.previewLine.setPath(state.workingPath);
+        if (state.previewHitLine) state.previewHitLine.setPath(state.workingPath);
+        rebuildRoadGeometryEditMarkers(state);
+        map.setCursor("");
+        return true;
+      }
+
       function nearestRoadGeometrySegmentIndex(path, point) {
         if (!path || path.length < 2 || !point) return 0;
 
@@ -22561,37 +22596,6 @@
               state,
               state.activeConnectedEndpoints
             );
-          });
-
-          kakao.maps.event.addListener(marker, "rightclick", function(mouseEvent) {
-            if (!roadGeometryEditState || !state.toolActive || state.mode !== "vertex") return;
-
-            // 라인은 최소 2개의 꼭지점이 필요하므로 그 이하로는 삭제하지 않음.
-            if (state.workingPath.length <= 2) {
-              return;
-            }
-
-            // 끝점 삭제 시 연결된 다른 라인까지 끊기는 것을 방지하기 위해
-            // 시작점/끝점은 삭제하지 않고 중간 꼭지점만 삭제 가능하게 함.
-            if (index === 0 || index === state.workingPath.length - 1) {
-              return;
-            }
-
-            if (mouseEvent && mouseEvent.domEvent) {
-              mouseEvent.domEvent.preventDefault();
-              mouseEvent.domEvent.stopPropagation();
-            }
-
-            state.workingPath.splice(index, 1);
-          setRoadEditDirty(true);
-            state.previewLine.setPath(state.workingPath);
-
-            if (state.previewHitLine) {
-              state.previewHitLine.setPath(state.workingPath);
-            }
-
-            rebuildRoadGeometryEditMarkers(state);
-            map.setCursor("");
           });
 
           kakao.maps.event.addListener(marker, "drag", function() {
