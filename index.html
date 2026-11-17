@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>경주시 농어촌도로 지도</title>
+  <link rel="preconnect" href="https://dapi.kakao.com">
+  <link rel="preload" href="Township%20Boundary.geojson" as="fetch" crossorigin="anonymous">
 
   <style>
     #map path[data-road-square-dash] { stroke-linecap: butt !important; }
@@ -10506,7 +10508,7 @@
        * 지도 표현 해상도 보정
        * 현재 4K 화면에서 보이는 선/텍스트 크기를 기준(3840x2160)으로 유지함.
        * screen CSS 크기 × devicePixelRatio로 실제 출력 해상도를 추정하여
-       * FHD/QHD 등에서는 선 두께와 라벨 크기를 같은 비율로 줄임.
+       * FHD/QHD에서도 선과 라벨이 너무 작아지지 않도록 4K 기준의 75%를 하한으로 사용함.
        * 모바일은 기존 모바일 UI 크기를 유지함.
        */
       const MAP_REFERENCE_WIDTH = 3840;
@@ -10520,7 +10522,7 @@
           const physicalHeight = Math.max(1, Number(window.screen && window.screen.height) || window.innerHeight || 1080) * dpr;
           const widthScale = physicalWidth / MAP_REFERENCE_WIDTH;
           const heightScale = physicalHeight / MAP_REFERENCE_HEIGHT;
-          return Math.max(0.5, Math.min(1.25, Math.min(widthScale, heightScale)));
+          return Math.max(0.75, Math.min(1.25, Math.min(widthScale, heightScale)));
         } catch (e) {
           return 1;
         }
@@ -10760,9 +10762,7 @@
         },
         townshipBoundary: {
           files: ["Township Boundary.geojson"],
-          overviewShapes: [],
-          detailLoaded: false,
-          detailLoadingPromise: null,
+
           visible: false,
           loaded: false,
           loadingPromise: null,
@@ -11770,9 +11770,6 @@
 
       function hideBoundaryLayersForInteraction() {
         Object.values(BOUNDARY_LAYERS).forEach(function(layer) {
-          (layer.overviewShapes || []).forEach(function(line) {
-            setOverlayMapIfChanged(line, null);
-          });
           if (layer === BOUNDARY_LAYERS.townshipBoundary && layer.visible) return;
           layer.shapes.forEach(function(shape) {
             if (shape.getMap()) shape.setMap(null);
@@ -16521,18 +16518,7 @@
         if (!layer) return;
 
         layer.visible = visible;
-        if (layerId === "townshipBoundary" && visible && !layer.detailLoaded) {
-          loadDetailedTownshipBoundary().catch(function(error) {
-            console.warn("원본 읍면 경계를 불러오지 못했습니다.", error);
-            layer.visible = false;
-            document.getElementById("townshipBoundaryCheck").checked = false;
-            const editorCheck = document.getElementById("editorTownshipBoundaryCheck");
-            if (editorCheck) editorCheck.checked = false;
-            updateBoundaryVisibility();
-          });
-        }
-
-        if (visible && !layer.loaded && layerId !== "townshipBoundary") {
+        if (visible && !layer.loaded) {
           loadBoundaryGeoJSON(layerId).catch(function(error) {
             console.warn(layerId + " 경계를 불러오지 못했습니다.", error);
             layer.visible = false;
@@ -16541,6 +16527,12 @@
                 ? document.getElementById("riBoundaryCheck")
                 : null;
             if (checkbox) checkbox.checked = false;
+            if (layerId === "townshipBoundary") {
+              document.getElementById("townshipBoundaryCheck").checked = false;
+              const editorCheck = document.getElementById("editorTownshipBoundaryCheck");
+              if (editorCheck) editorCheck.checked = false;
+            }
+            updateBoundaryVisibility();
           });
           return;
         }
@@ -16568,20 +16560,15 @@
 
       function syncTownshipBoundaryDisplay() {
         const layer = BOUNDARY_LAYERS.townshipBoundary;
-        const showDetail = layer.visible && layer.detailLoaded;
-        const showOverview = !showDetail && !mapInteracting && shouldAutoShowTownshipBoundary();
+        const show = layer.visible || (!mapInteracting && shouldAutoShowTownshipBoundary());
         const options = {
           strokeColor: isSkyViewMode ? "#FFFFFF" : "#59636D",
           strokeWeight: mapStrokePx(isSkyViewMode ? 2.6 : 1.6, 1),
           strokeOpacity: isSkyViewMode ? 1 : 0.92, strokeStyle: "shortdash"
         };
-        (layer.overviewShapes || []).forEach(function(line) {
-          setMapOptionsIfChanged(line, options);
-          setOverlayMapIfChanged(line, showOverview ? map : null);
-        });
         layer.shapes.forEach(function(line) {
           setMapOptionsIfChanged(line, options);
-          setOverlayMapIfChanged(line, showDetail ? map : null);
+          setOverlayMapIfChanged(line, show ? map : null);
         });
       }
 
@@ -16593,7 +16580,7 @@
             !Number.isFinite(currentScaleDenominator) ||
             currentScaleDenominator <= layer.maxScale;
 
-          // 읍면동은 아래에서 간략/원본 선을 전환하고 나머지는 메뉴 상태를 따름.
+          // 시와 리 경계는 메뉴 상태와 지도 축척을 따름.
           const show = scaleVisible && layer.visible;
 
           layer.shapes.forEach(function(shape) {
@@ -16602,7 +16589,7 @@
           });
         });
 
-        // 공유 경계 Polyline의 간략/원본 표시를 동기화
+        // 읍면동 경계는 전체 보기와 메뉴에서 같은 선을 사용함.
         syncTownshipBoundaryDisplay();
       }
 
@@ -17637,27 +17624,6 @@
         });
       }
 
-      async function loadDetailedTownshipBoundary() {
-        const layer = BOUNDARY_LAYERS.townshipBoundary;
-        if (layer.detailLoaded) return;
-        if (layer.detailLoadingPromise) return layer.detailLoadingPromise;
-        layer.detailLoadingPromise = (async function() {
-          const loaded = await fetchFirstAvailableGeoJSON(["Township Boundary.geojson"]);
-          const shapes = [];
-          loaded.data.features.forEach(function(feature) {
-            addTownshipBoundaryLines(feature, shapes);
-          });
-          layer.shapes = shapes;
-          layer.detailLoaded = true;
-          updateBoundaryVisibility();
-        })();
-        try {
-          await layer.detailLoadingPromise;
-        } finally {
-          layer.detailLoadingPromise = null;
-        }
-      }
-
       function shouldShowTownshipLabel(name) {
         if (!name) return false;
 
@@ -17765,7 +17731,7 @@
         let lastError = null;
         for (const file of fileCandidates) {
           try {
-            const response = await fetch(encodeURI(file), { cache: "default" });
+            const response = await fetch(encodeURI(file), { mode: "cors", cache: "default" });
             if (!response.ok) throw new Error(file + " HTTP " + response.status);
             const data = await response.json();
             if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
@@ -17792,9 +17758,8 @@
 
           loaded.data.features.forEach(function(feature) {
             if (layerId === "townshipBoundary") {
-              // 작은 파일의 폴리곤은 이름/선택 계산에만 사용하고 화면에는 중복 제거한 선만 그림.
               addTownshipSelectorFeature(feature);
-              addTownshipBoundaryLines(feature, layer.overviewShapes);
+              addTownshipBoundaryLines(feature, layer.shapes);
             } else {
               addBoundaryFeature(feature, layerId);
             }
@@ -17809,7 +17774,6 @@
           }
 
           updateBoundaryVisibility();
-          syncTownshipBoundaryDisplay();
           updateRiLabelVisibility();
           return loaded.file;
         })();
@@ -17830,22 +17794,13 @@
           console.error("읍면동 경계를 불러오지 못했습니다.", error);
         });
 
-      function runAfterFirstPaint(task, timeout) {
+      const roadsReadyPromise = new Promise(function(resolve, reject) {
+        // 첫 화면을 그린 직후 다운로드를 시작한다. 도형 생성은 별도 유휴 작업으로 나뉜다.
         requestAnimationFrame(function() {
           requestAnimationFrame(function() {
-            if ("requestIdleCallback" in window) {
-              window.requestIdleCallback(task, { timeout: timeout || 700 });
-            } else {
-              setTimeout(task, 40);
-            }
+            Promise.all([loadGeoJSON("city"), loadGeoJSON("rural")]).then(resolve, reject);
           });
         });
-      }
-
-      const roadsReadyPromise = new Promise(function(resolve, reject) {
-        runAfterFirstPaint(function() {
-          Promise.all([loadGeoJSON("city"), loadGeoJSON("rural")]).then(resolve, reject);
-        }, 500);
       });
 
       const ruralTableReady = roadsReadyPromise
@@ -17942,9 +17897,9 @@
         // 브라우저에 예전에 저장된 대용량 GeoJSON은 사용하지 않음.
         const response =
           await fetch(
-            LAYERS[layerId].file + "?v=" + Date.now(),
+            LAYERS[layerId].file,
             {
-              cache: "no-store",
+              cache: "no-cache",
               credentials: "same-origin"
             }
           );
@@ -22519,64 +22474,6 @@
           if (state) state.hoverPlusAdding = false;
         }, 120);
       }
-
-      function hideGeometryHoverPlus(state, immediate) {
-        if (!state || !state.hoverPlusOverlay) return;
-
-        clearTimeout(state.hoverPlusHideTimer);
-
-        if (immediate) {
-          state.hoverPlusOverlay.setMap(null);
-          return;
-        }
-
-        // 라인에서 원형 +로 마우스가 이동하는 짧은 순간에는
-        // 아이콘을 유지하여 깜박임을 방지함.
-        state.hoverPlusHideTimer = setTimeout(function() {
-          if (!state.hoverPlusInside) {
-            state.hoverPlusOverlay.setMap(null);
-          }
-        }, 120);
-      }
-
-      function addGeometryVertexAtHoverPlus(state) {
-        if (
-          !state ||
-          !state.hoverPlusPosition ||
-          state.hoverPlusAdding
-        ) return;
-
-        state.hoverPlusAdding = true;
-
-        const position = new kakao.maps.LatLng(
-          state.hoverPlusPosition.getLat(),
-          state.hoverPlusPosition.getLng()
-        );
-
-        const segmentIndex = nearestRoadGeometrySegmentIndex(
-          state.workingPath,
-          position
-        );
-
-        state.workingPath.splice(
-          segmentIndex + 1,
-          0,
-          position
-        );
-
-        state.previewLine.setPath(state.workingPath);
-        if (state.previewHitLine) {
-          state.previewHitLine.setPath(state.workingPath);
-        }
-
-        hideGeometryHoverPlus(state, true);
-        rebuildRoadGeometryEditMarkers(state);
-
-        setTimeout(function() {
-          if (state) state.hoverPlusAdding = false;
-        }, 120);
-      }
-
 
       function getGeometrySegmentMidpointInfo(state, mousePosition) {
         if (!state || !mousePosition || !state.workingPath || state.workingPath.length < 2) {
