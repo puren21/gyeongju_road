@@ -19710,7 +19710,14 @@
         removeSelectedRouteBalloon();
       }
 
+      const roadGroupHighlightUnderlays = new Map();
+
       function setRoadGroupHighlight(groupKey, enabled) {
+        const previousUnderlays = roadGroupHighlightUnderlays.get(groupKey);
+        if (previousUnderlays) {
+          previousUnderlays.forEach(function(line) { line.setMap(null); });
+          roadGroupHighlightUnderlays.delete(groupKey);
+        }
         const group = groups.get(groupKey);
         if (!group || !group.roads) return;
 
@@ -19791,6 +19798,8 @@
         }
 
 
+        if (enabled) roadGroupHighlightUnderlays.set(groupKey, []);
+
         group.roads.forEach(function(road) {
           if (!road) return;
 
@@ -19849,6 +19858,20 @@
               zIndex: enabled ? 90 - index : 40 - index
             });
           });
+
+          const highlightLine = lines[topVisibleIndex];
+          if (enabled && road._visible && highlightLine && highlightLine.getMap()) {
+            const underlay = new kakao.maps.Polyline({
+              map: map,
+              path: highlightLine.getPath(),
+              strokeColor: "#FFFFFF",
+              strokeWeight: 7,
+              strokeOpacity: 1,
+              strokeStyle: "solid",
+              zIndex: 89 - topVisibleIndex
+            });
+            roadGroupHighlightUnderlays.get(groupKey).push(underlay);
+          }
 
           if (road.hitLine) {
             if (statusHidden) {
