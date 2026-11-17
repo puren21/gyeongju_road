@@ -11890,7 +11890,8 @@
 
       function isRoadDatasetVisible(road) {
         if (!road) return false;
-        if (road.layerId === "rural") return ruralOnlineEditsReady && changedRoadDatasetVisible;
+        if (road.layerId === "rural") return ruralOnlineEditsReady &&
+          (groups.get(road.groupKey)?.proposed ? baseRoadDatasetVisible : changedRoadDatasetVisible);
         return true;
       }
 
@@ -12170,9 +12171,6 @@
         if (mapInteracting) return;
         document.body.classList.remove("map-interacting");
 
-        if (typeof enforceBaseRoadDatasetVisibility === "function") {
-          enforceBaseRoadDatasetVisibility();
-        }
 
         const wasWindowsDragFastMode = windowsDragFastMode;
         const wasWindowsZoomFastMode = windowsZoomFastMode;
@@ -17950,7 +17948,7 @@
         if (skipped) console.warn(LAYERS[layerId].file + ": 표시하지 못한 Feature " + skipped + "개");
       }
 
-      function addFeature(feature, layerId) {
+      function addFeature(feature, layerId, proposed = false) {
         const properties = feature.properties || {};
 
         if (layerId === "rural") {
@@ -17968,7 +17966,7 @@
 
         // 농어촌도로 총연장은 속성값이 아니라 실제 라인 geometry 길이로 계산함.
 
-        const groupKey = layerId + "::" + number;
+        const groupKey = (proposed ? "proposed" : layerId) + "::" + number;
         const color = getColor(properties, layerId);
         const statusKey = getRoadStatusKey(properties, layerId);
 
@@ -17977,6 +17975,7 @@
             key: groupKey,
             number: number,
             layerId: layerId,
+            proposed,
             bounds: new kakao.maps.LatLngBounds(),
             roads: [],
             paths: [],
@@ -18209,7 +18208,7 @@
         const response = await fetch(encodeURI(fileName), { cache: "no-cache" });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error(fileName + " HTTP " + response.status);
-        return validateRoadDataset(await response.json(), false);
+        return validateRoadDataset(await response.json(), true);
       }
 
       function clearLegacyRoadDatasetStorage() {
@@ -18220,161 +18219,62 @@
       }
 
       // ===== 기존 도로구간 비교 레이어 =====
-      const baseRoadDatasetShapes = [];
       let loadedBaseRoadGeoJSON = null;
       let baseRoadLoadState = "loading";
       let pendingBaseRoadGeoJSON = null;
-      let captureChangedRoadPoint = null;
       let pendingChangedRoadGeoJSON = null;
+      let captureChangedRoadPoint = null;
 
-      function clearBaseRoadDatasetShapes() {
-        baseRoadDatasetShapes.forEach(function(line) {
-          try { line.setMap(null); } catch (e) {}
-        });
-        baseRoadDatasetShapes.length = 0;
-      }
-
-      function baseRoadDatasetColor(properties) {
-        const type = String(
-          (properties && (properties["구분"] || properties.GUBUN || properties.gubun)) || ""
-        ).trim();
-
-        if (type === "면도") return COLORS.MYEON;
-        if (type === "리도") return COLORS.RI;
-        if (type === "농도") return COLORS.FARM;
-        return "#7f8790";
-      }
-
-      function drawBaseRoadDataset(data) {
-        clearBaseRoadDatasetShapes();
-
-        if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
-          updateRoadDatasetManagerStatus();
-          return;
-        }
-
-        data.features.forEach(function(feature) {
-          const props = feature.properties || {};
-          const statusKey = getRoadStatusKey(props, "rural");
-          const strokeStyle =
-            statusKey === "UNOPENED" ? "dash" :
-            statusKey === "PLAN" ? "dot" :
-            getStatusStrokeStyle(statusKey);
-
-          getLines(feature.geometry).forEach(function(coords) {
-            const path = (coords || []).map(function(coord) {
-              const normalized = normalizeCoordinate(coord);
-              if (!normalized) return null;
-              return new kakao.maps.LatLng(normalized[1], normalized[0]);
-            }).filter(Boolean);
-
-            if (path.length < 2) return;
-
-            const line = new kakao.maps.Polyline({
-              map: baseRoadDatasetVisible ? map : null,
-              path: path,
-              strokeWeight: mapStrokePx(3, 1),
-              strokeColor: baseRoadDatasetColor(props),
-              strokeOpacity: .82,
-              strokeStyle: strokeStyle,
-              zIndex: 24
-            });
-
-            baseRoadDatasetShapes.push(line);
-          });
-        });
-
+      function refreshRoadDatasets() {
+        refreshAllRoadJoinLines();
+        buildGroupLabels();
+        makeLists();
+        invalidateRoadVisibilityCache();
+        applyRoadVisibility();
+        updateLabels();
         updateRoadDatasetManagerStatus();
       }
 
-      function enforceBaseRoadDatasetVisibility() {
-        baseRoadDatasetShapes.forEach(function(line) {
-          const shouldShow = baseRoadDatasetVisible;
-          const isShown = !!line.getMap();
-          if (shouldShow !== isShown) {
-            line.setMap(shouldShow ? map : null);
-          }
+      function removeRuralDatasetGroups(proposed) {
+        if (groups.has(roadEditSessionGroupKey) && !!groups.get(roadEditSessionGroupKey).proposed === proposed) {
+          finishRoadEditSession(roadEditSessionGroupKey);
+        }
+        if (groups.has(selectedRoadGroupKey) && !!groups.get(selectedRoadGroupKey).proposed === proposed) {
+          closeRoadPopup();
+          resetSelection();
+        }
+        groups.forEach(function(group, key) {
+          if (group.layerId !== "rural" || !!group.proposed !== proposed) return;
+          group.roads.forEach(removeRoadObjectFromMap);
+          removeRoadGroupJoinLines(group);
+          groups.delete(key);
+          hiddenRoadGroups.delete(key);
         });
+      }
+
+      function drawBaseRoadDataset(data) {
+        removeRuralDatasetGroups(true);
+        for (const feature of data?.features || []) addFeature(feature, "rural", true);
+        groups.forEach(function(group) {
+          if (group.proposed) syncRuralRouteDerivedFields(group);
+        });
+        refreshRoadDatasets();
       }
 
       function setBaseRoadDatasetVisible(visible) {
         baseRoadDatasetVisible = !!visible;
-        enforceBaseRoadDatasetVisibility();
-        try {
-          localStorage.setItem(
-            "gyeongjuBaseRoadVisible",
-            baseRoadDatasetVisible ? "1" : "0"
-          );
-        } catch (e) {}
-        updateRoadDatasetManagerStatus();
+        try { localStorage.setItem("gyeongjuBaseRoadVisible", visible ? "1" : "0"); } catch (error) {}
+        invalidateRoadVisibilityCache();
+        applyRoadVisibility();
+        updateLabels();
       }
 
       function setChangedRoadDatasetVisible(visible) {
         changedRoadDatasetVisible = !!visible;
-
-        try {
-          localStorage.setItem(
-            "gyeongjuChangedRoadVisible",
-            changedRoadDatasetVisible ? "1" : "0"
-          );
-        } catch (e) {}
-
-        // 체크를 끈 즉시 모든 변경 도로구간을 지도에서 제거함.
-        // 확대/축소 중 applyRoadVisibility가 지연되더라도 다시 나타나지 않게
-        // _visible 캐시까지 함께 false로 고정함.
-        if (!changedRoadDatasetVisible) {
-          allRoads.forEach(function(road) {
-            if (road.layerId !== "rural") return;
-
-            road._visible = false;
-            road._visualTier = null;
-
-            getRoadVisualLines(road)
-              .concat(road.hitLine ? [road.hitLine] : [])
-              .forEach(function(line) {
-                if (line && line.getMap()) line.setMap(null);
-              });
-          });
-
-          (LAYERS.rural.labels || []).forEach(function(labelItem) {
-            if (labelItem.overlay && labelItem.overlay.getMap()) {
-              labelItem.overlay.setMap(null);
-            }
-            labelItem._visible = false;
-          });
-
-          groups.forEach(function(group) {
-            if (group && group.layerId === "rural") {
-              updateRoadGroupJoinLineVisibility(group);
-            }
-          });
-
-          if (
-            selectedRoadGroupKey &&
-            groups.get(selectedRoadGroupKey) &&
-            groups.get(selectedRoadGroupKey).layerId === "rural"
-          ) {
-            removeSelectedRouteBalloon();
-          }
-        } else {
-          // 다시 켤 때는 캐시를 무효화하고 현재 축척/화면 기준으로 재계산.
-          allRoads.forEach(function(road) {
-            if (road.layerId === "rural") {
-              road._visible = false;
-              road._visualTier = null;
-            }
-          });
-        }
-
-        if (!mapInteracting && !windowsZoomFastMode && !windowsDragFastMode) {
-          applyRoadVisibility();
-          updateLabels();
-        } else {
-          // 지도 조작 종료 후 정상 복원되도록 새 refresh를 예약.
-          scheduleMapRefresh();
-        }
-
-        updateRoadDatasetManagerStatus();
+        try { localStorage.setItem("gyeongjuChangedRoadVisible", visible ? "1" : "0"); } catch (error) {}
+        invalidateRoadVisibilityCache();
+        applyRoadVisibility();
+        updateLabels();
       }
 
       function validateRoadDataset(data, requireRouteNumber) {
@@ -18455,7 +18355,7 @@
               saved.features.length.toLocaleString("ko-KR") + "개 구간";
           } else {
             const count = Array.from(groups.values())
-              .filter(function(group) { return group.layerId === "rural"; })
+              .filter(function(group) { return group.layerId === "rural" && !group.proposed; })
               .reduce(function(sum, group) {
                 return sum + (group.roads ? group.roads.length : 0);
               }, 0);
@@ -18472,45 +18372,7 @@
           !Array.isArray(data.features)
         ) return;
 
-        // 현재 농어촌도로 선택/편집 상태 종료
-        if (
-          roadEditSessionGroupKey &&
-          groups.get(roadEditSessionGroupKey) &&
-          groups.get(roadEditSessionGroupKey).layerId === "rural"
-        ) {
-          finishRoadEditSession(roadEditSessionGroupKey);
-        }
-
-        closeRoadPopup();
-        clearSelectedRoadHighlight();
-
-        // 기존 변경 도로구간 객체를 지도와 메모리에서 완전히 제거
-        (LAYERS.rural.labels || []).forEach(function(item) {
-          if (item && item.overlay) item.overlay.setMap(null);
-        });
-        (LAYERS.rural.shapes || []).forEach(function(shape) {
-          if (shape && shape.setMap) shape.setMap(null);
-        });
-
-        LAYERS.rural.labels.length = 0;
-        LAYERS.rural.shapes.length = 0;
-
-        for (let i = allRoads.length - 1; i >= 0; i--) {
-          if (allRoads[i] && allRoads[i].layerId === "rural") {
-            allRoads.splice(i, 1);
-          }
-        }
-
-        Array.from(groups.keys()).forEach(function(key) {
-          const group = groups.get(key);
-          if (group && group.layerId === "rural") {
-            removeRoadGroupJoinLines(group);
-            groups.delete(key);
-            hiddenRoadGroups.delete(key);
-          }
-        });
-
-        ruralTotalLengths.clear();
+        removeRuralDatasetGroups(false);
 
         await processRoadFeaturesInChunks(data.features, "rural");
 
@@ -18536,11 +18398,11 @@
         updateRoadDatasetManagerStatus();
       }
 
-      function buildCurrentChangedRoadGeoJSON() {
+      function buildCurrentChangedRoadGeoJSON(proposed = false) {
         const features = [];
 
         groups.forEach(function(group) {
-          if (!group || group.layerId !== "rural") return;
+          if (!group || group.layerId !== "rural" || !!group.proposed !== proposed) return;
 
           syncRuralRouteDerivedFields(group);
 
@@ -18587,11 +18449,11 @@
         };
       }
 
-      function exportChangedRoadDatasetGeoJSON() {
-        const geojson = buildCurrentChangedRoadGeoJSON();
+      function exportChangedRoadDatasetGeoJSON(proposed = false) {
+        const geojson = buildCurrentChangedRoadGeoJSON(proposed);
 
         if (!geojson.features.length) {
-          alert("내보낼 기존 도로구간이 없습니다.");
+          alert("내보낼 " + (proposed ? "변경" : "기존") + " 도로구간이 없습니다.");
           return;
         }
 
@@ -18611,7 +18473,7 @@
           String(now.getMinutes()).padStart(2, "0");
 
         a.href = url;
-        a.download = "gyeongju_existing_roads_" + stamp + ".geojson";
+        a.download = (proposed ? "gyeongju_proposed_roads_" : "gyeongju_existing_roads_") + stamp + ".geojson";
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -18668,6 +18530,7 @@
                   '<input id="baseRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
                 '</label>' +
                 '<button id="drawChangedRoad" type="button">선형 그리기</button>' +
+                '<button id="baseRoadDatasetExport" type="button">다운로드</button>' +
                 '<button id="baseRoadDatasetSave" type="button">저장</button>' +
                 '<button id="baseRoadDatasetRetry" type="button" hidden>다시 불러오기</button>' +
               '</div>' +
@@ -18703,7 +18566,7 @@
                 '<label class="road-dataset-file-btn">파일 불러오기' +
                   '<input id="changedRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
                 '</label>' +
-                '<button id="changedRoadDatasetExport" type="button">내보내기</button>' +
+                '<button id="changedRoadDatasetExport" type="button">다운로드</button>' +
                 '<button id="changedRoadDatasetSave" type="button">저장</button>' +
               '</div>' +
             '</div>' +
@@ -18875,6 +18738,9 @@
         const undo = document.getElementById("changedRoadUndo");
         const finish = document.getElementById("changedRoadFinish");
         const draft = { addPath: [] };
+        let drawingToolbar = null;
+        const cancel = document.getElementById("changedRoadCancel");
+        const drawingActions = undo.parentElement;
 
         function showDrawingPreview() {
           renderRoadGeometryAddPreview(draft);
@@ -18882,10 +18748,15 @@
           undo.disabled = count === 0;
           finish.disabled = count < 2;
           drawingHelp.textContent = "지도에서 점을 차례로 클릭하세요. " + count + "개 점을 그렸습니다.";
+          drawingToolbar?.querySelector("#geometryEditHelp").replaceChildren(drawingHelp.textContent);
         }
 
         function cancelDrawing() {
           captureChangedRoadPoint = null;
+          drawingActions.append(undo, finish, cancel);
+          drawingToolbar?.remove();
+          drawingToolbar = null;
+          map.setCursor("");
           clearRoadGeometryAddPreview(draft);
           draft.addPath = [];
           drawing.hidden = true;
@@ -18906,6 +18777,17 @@
           closeRoadPopup();
           clearSelectedRoadHighlight();
           drawing.hidden = false;
+          drawingToolbar = createRoadGeometryToolbar({ layerId: "rural" });
+          drawingToolbar.querySelectorAll(".geometry-icon-btn").forEach(function(button) {
+            if (button.id === "geometryAddModeBtn") {
+              button.removeAttribute("onclick");
+              button.classList.add("active");
+            } else {
+              button.remove();
+            }
+          });
+          drawingToolbar.append(undo, finish, cancel);
+          map.setCursor("crosshair");
           captureChangedRoadPoint = function(point) {
             const previous = draft.addPath[draft.addPath.length - 1];
             if (previous && previous.getLng() === point.getLng() && previous.getLat() === point.getLat()) return;
@@ -18924,10 +18806,12 @@
           undo.disabled = true;
           finish.disabled = true;
           fields.hidden = false;
+          map.setCursor("");
+          drawingToolbar?.querySelector("#geometryEditHelp").replaceChildren("도로번호와 속성을 입력하세요.");
           drawingHelp.textContent = "그린 선형의 도로번호와 속성을 입력하세요.";
           fields.elements.number.focus();
         });
-        document.getElementById("changedRoadCancel").addEventListener("click", cancelDrawing);
+        cancel.addEventListener("click", cancelDrawing);
         document.addEventListener("keydown", function(event) {
           if (event.key === "Escape" && !drawing.hidden) cancelDrawing();
         });
@@ -18958,21 +18842,18 @@
             }
           };
 
-          const data = pendingBaseRoadGeoJSON || loadedBaseRoadGeoJSON;
-          pendingBaseRoadGeoJSON = {
-            ...data,
-            type: "FeatureCollection",
-            features: [...(data?.features || []), feature]
-          };
+          addFeature(feature, "rural", true);
+          pendingBaseRoadGeoJSON = buildCurrentChangedRoadGeoJSON(true);
           cancelDrawing();
           baseCheck.checked = true;
           setBaseRoadDatasetVisible(true);
-          drawBaseRoadDataset(pendingBaseRoadGeoJSON);
+          refreshRoadDatasets();
+          selectGroup("proposed::" + getNumber(properties, "rural"));
         });
 
         baseFile.addEventListener("change", async function() {
           try {
-            pendingBaseRoadGeoJSON = await readRoadGeoJSONFile(this.files && this.files[0]);
+            pendingBaseRoadGeoJSON = await readRoadGeoJSONFile(this.files && this.files[0], true);
             drawBaseRoadDataset(pendingBaseRoadGeoJSON);
             updateRoadDatasetManagerStatus();
           } catch (error) {
@@ -18993,6 +18874,9 @@
           }
         });
 
+        document.getElementById("baseRoadDatasetExport").addEventListener("click", function() {
+          exportChangedRoadDatasetGeoJSON(true);
+        });
         if (changedExport) {
           changedExport.addEventListener("click", function() {
             exportChangedRoadDatasetGeoJSON();
@@ -19012,7 +18896,8 @@
             return;
           }
 
-          const savingData = pendingBaseRoadGeoJSON;
+          const pendingAtSave = pendingBaseRoadGeoJSON;
+          const savingData = buildCurrentChangedRoadGeoJSON(true);
           baseSave.disabled = true;
           baseSave.textContent = "저장 중";
 
@@ -19030,8 +18915,7 @@
 
             loadedBaseRoadGeoJSON = savingData;
             baseRoadLoadState = "ready";
-            if (pendingBaseRoadGeoJSON === savingData) pendingBaseRoadGeoJSON = null;
-            drawBaseRoadDataset(pendingBaseRoadGeoJSON || loadedBaseRoadGeoJSON);
+            if (pendingBaseRoadGeoJSON === pendingAtSave) pendingBaseRoadGeoJSON = null;
             updateRoadDatasetManagerStatus();
 
             alert(
@@ -19737,7 +19621,7 @@
             if (
               labelsEnabled &&
               layer.visible &&
-              (layerId !== "rural" || changedRoadDatasetVisible) &&
+              (layerId !== "rural" || (labelGroup?.proposed ? baseRoadDatasetVisible : changedRoadDatasetVisible)) &&
               scaleVisible &&
               labelGroup &&
               !hiddenRoadGroups.has(labelItem.groupKey) &&
@@ -19865,7 +19749,7 @@
             const mainText =
               layerId === "city"
                 ? "시도 " + group.number
-                : group.number;
+                : group.number + (group.proposed ? " · 변경 도로구간" : "");
 
             button.innerHTML =
               '<span class="road-list-main">' + escapeHTML(mainText) + '</span>';
@@ -19993,7 +19877,7 @@
       window.initGyeongjuAttributeTable({
         rows: function () {
           return Array.from(groups.values())
-            .filter(group => group.layerId === "rural")
+            .filter(group => group.layerId === "rural" && !group.proposed)
             .flatMap(group => group.roads.map((road, index) => ({
               groupKey: group.key,
               number: group.number,
@@ -20024,6 +19908,11 @@
 
         addressInfo.close();
         addressMarker.setMap(null);
+
+        if (group.proposed && !baseRoadDatasetVisible) {
+          document.getElementById("baseRoadDatasetCheck").checked = true;
+          setBaseRoadDatasetVisible(true);
+        }
 
         if (!LAYERS[group.layerId].visible) {
           const checkId =
@@ -20454,7 +20343,7 @@
           }
         }
 
-        if (group.layerId === "rural" && !changedRoadDatasetVisible) {
+        if (group.layerId === "rural" && !(group.proposed ? baseRoadDatasetVisible : changedRoadDatasetVisible)) {
           group.roads.forEach(function(road) {
             if (!road) return;
             road._visible = false;
@@ -21445,6 +21334,7 @@
       }
 
       async function fetchOnlineRoadEdits(group) {
+        if (group.proposed) return null;
         const editKey = sacheonRoadEditKey(group);
         if (!editKey) return null;
 
@@ -21472,6 +21362,11 @@
       }
 
       async function saveOnlineRoadEdits(group, payload) {
+        if (group.proposed) {
+          pendingBaseRoadGeoJSON = buildCurrentChangedRoadGeoJSON(true);
+          updateRoadDatasetManagerStatus();
+          return;
+        }
         const editKey = sacheonRoadEditKey(group);
         const updated = new Date().toISOString();
 
@@ -21695,7 +21590,7 @@
 
         const show =
           ruralOnlineEditsReady &&
-          changedRoadDatasetVisible &&
+          (group.proposed ? baseRoadDatasetVisible : changedRoadDatasetVisible) &&
           LAYERS.rural.visible &&
           isRoadLayerVisibleAtScale("rural") &&
           !hiddenRoadGroups.has(group.key);
@@ -24596,6 +24491,11 @@
           // vertex 모드의 꼭지점 추가는 기존 + 아이콘 방식 유지.
         });
 
+        createRoadGeometryToolbar(group);
+        map.setCursor("");
+      }
+
+      function createRoadGeometryToolbar(group) {
         const toolbar = document.createElement("div");
         toolbar.id = "geometryEditToolbar";
         toolbar.className = "geometry-edit-toolbar integrated";
@@ -24626,7 +24526,7 @@
           '</button>';
         document.body.appendChild(toolbar);
         enableGeometryEditToolbarDrag(toolbar);
-        map.setCursor("");
+        return toolbar;
       }
 
       window.startRoadGeometryEdit = startRoadGeometryEdit;
