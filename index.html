@@ -20353,7 +20353,7 @@
               strokeColor: enabled
                 ? COLORS.SELECTED
                 : getRoadLayerDisplayColor(road.styleKey, config),
-              strokeWeight: enabled ? (isSelectedSegment ? 12 : 8) : mapStrokePx(
+              strokeWeight: enabled ? (isSelectedSegment ? 10 : 8) : mapStrokePx(
                 (
                   road.statusKey === "UNOPENED"
                     ? Math.max(
@@ -20383,7 +20383,7 @@
               map: map,
               path: highlightLine.getPath(),
               strokeColor: "#FFFFFF",
-              strokeWeight: isSelectedSegment ? 16 : 10,
+              strokeWeight: isSelectedSegment ? 14 : 10,
               strokeOpacity: 1,
               strokeStyle: "solid",
               zIndex: highlightZIndex - 1
