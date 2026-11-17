@@ -19803,7 +19803,6 @@
             enabled &&
             roadIndex >= 0 &&
             roadIndex === selectedRoadSegmentIndex;
-          const isBlueHighlight = enabled && !isSelectedSegment;
           const highlightColor =
             isSelectedSegment ? "#E60012" : "#0057FF";
 
@@ -19814,7 +19813,7 @@
             const config = stack[index] || stack[0];
             const layerEnabled = isRoadVisualLineEnabled(road, config, index, topVisibleIndex);
 
-            if (!layerEnabled || statusHidden || (isBlueHighlight && index !== topVisibleIndex)) {
+            if (!layerEnabled || statusHidden || (enabled && index !== topVisibleIndex)) {
               if (line && line.getMap()) line.setMap(null);
               return;
             }
@@ -19827,7 +19826,7 @@
               strokeColor: enabled
                 ? highlightColor
                 : getRoadLayerDisplayColor(road.styleKey, config),
-              strokeWeight: isBlueHighlight ? 6 : mapStrokePx(
+              strokeWeight: enabled ? 6 : mapStrokePx(
                 (
                   road.statusKey === "UNOPENED"
                     ? Math.max(
