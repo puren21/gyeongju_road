@@ -10559,7 +10559,7 @@
         // 2026-09-14 통합 레이어 메뉴 기준값
         CITY:  { color: "#77B959", baseColor: "#FFFFFF", top: 4, base: 7.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
         MYEON: { color: "#E85B24", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
-        RI:    { color: "#00849A", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
+        RI:    { color: "#0057FF", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 },
         FARM:  { color: "#AD7700", baseColor: "#FFFFFF", top: 4, base: 6.0, mid: 4.0, inner: 0, topOpacity: 100, baseOpacity: 100 }
       };
 
@@ -10567,7 +10567,7 @@
       const SKY_ROAD_COLORS = {
         CITY:  "#00E5FF",  // 밝은 청록
         MYEON: "#FF7043",  // 선명한 적색
-        RI:    "#36C5FF",  // 강한 파랑
+        RI:    "#0057FF",  // 강한 파랑
         FARM:  "#FFD140"   // 선명한 노랑
       };
 
@@ -10581,7 +10581,7 @@
           { name: "외곽라인", color: "#FFFFFF", skyColor: "#FFFFFF", width: 6.0, lineStyle: "inherit", opacity: 100, visible: true }
         ],
         RI: [
-          { name: "기본라인", color: "#00849A", skyColor: "#36C5FF", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
+          { name: "기본라인", color: "#0057FF", skyColor: "#0057FF", width: 4.0, lineStyle: "inherit", opacity: 100, visible: true },
           { name: "외곽라인", color: "#FFFFFF", skyColor: "#FFFFFF", width: 6.0, lineStyle: "inherit", opacity: 100, visible: true }
         ],
         FARM: [
@@ -10677,7 +10677,7 @@
       // Upgrade the previous default colors while keeping user-defined styles.
       const previousRoadColors = {
         MYEON: ["#E7725A", "#D84315"],
-        RI: ["#8896F8", "#007DAA"],
+        RI: ["#8896F8", "#007DAA", "#00849A"],
         FARM: ["#CDAD5A"]
       };
       Object.entries(previousRoadColors).forEach(function ([key, previousColors]) {
@@ -10690,7 +10690,10 @@
         stack.forEach(function (layer) {
           if (layer?.name !== "기본라인") return;
           if (previousColors.includes(layer.color?.toUpperCase())) layer.color = defaults.color;
-          if (layer.skyColor?.toUpperCase() === previousColors[0]) layer.skyColor = defaults.skyColor;
+          const savedSkyColor = layer.skyColor?.toUpperCase();
+          if (savedSkyColor === previousColors[0] || (key === "RI" && savedSkyColor === "#36C5FF")) {
+            layer.skyColor = defaults.skyColor;
+          }
         });
       });
 
@@ -20370,7 +20373,7 @@
             roadIndex >= 0 &&
             roadIndex === selectedRoadSegmentIndex;
           const highlightColor =
-            isSelectedSegment ? "#E60012" : "#0057FF";
+            isSelectedSegment ? "#E60012" : "#8927D4";
 
           const topVisibleIndex = getTopVisibleRoadLineIndex(road);
           const statusHidden = road.layerId !== "rural" && isRoadStatusHidden(road.statusKey);
