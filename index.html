@@ -18538,13 +18538,7 @@
                   '<button id="changedRoadFinish" type="button">그리기 완료</button>' +
                   '<button id="changedRoadCancel" type="button">취소</button>' +
                 '</div>' +
-                '<form id="changedRoadFields" class="popup-inline-edit-form" hidden>' +
-                  popupEditRow("도로번호", "number", "", "text") +
-                  popupEditRow("구분", "kind", "리도", "select", ["면도", "리도", "농도"]) +
-                  popupEditRow("차선 수", "lane", "", "number") +
-                  popupEditRow("도로폭", "width", "", "number", null, false, "m") +
-                  '<div class="road-dataset-actions"><button type="submit">변경 도로구간에 추가</button></div>' +
-                '</form>' +
+                roadInlineEditAttributes({ layerId: "rural", number: "", roads: [], propertiesList: [] }, null, true) +
               '</section>' +
             '</div>' +
           '</div>' +
@@ -18741,11 +18735,42 @@
         const drawingHome = drawing.parentElement;
         fields.elements.number.required = true;
         fields.elements.number.maxLength = 80;
-        for (const name of ["lane", "width"]) {
+        for (const name of ["laneSelected", "widthSelected"]) {
           fields.elements[name].type = "number";
           fields.elements[name].min = "0";
         }
-        fields.elements.width.step = "any";
+        fields.elements.widthSelected.step = "any";
+
+        function getDrawingProperties() {
+          const data = new FormData(fields);
+          const properties = {
+            "노선번호": String(data.get("number")).trim(),
+            "구분": data.get("gubun")
+          };
+          applyRoadEditValuesToRoad({ layerId: "rural" }, { properties }, {
+            lane: data.get("laneSelected"),
+            width: data.get("widthSelected"),
+            start: data.get("start"),
+            end: data.get("end"),
+            specialNote: data.get("specialNote")
+          });
+          normalizeRuralRoadAutoStatus(properties);
+          return properties;
+        }
+
+        function updateDrawingAttributes() {
+          const properties = getDrawingProperties();
+          const road = { properties, pathFine: draft.addPath };
+          const group = { layerId: "rural", roads: [road], propertiesList: [properties] };
+          const length = formatRoadLengthKm(roadGeometryLengthKm(road));
+          fields.elements.statusSummary.value = statusLengthSummary(group);
+          fields.elements.laneSummary.value = rangeValues(group.propertiesList, "차선");
+          fields.elements.widthSummary.value = rangeValues(group.propertiesList, "도로폭");
+          fields.elements.totalLength.value = length;
+          fields.elements.length.value = length;
+          fields.elements.status.value = properties["개설여부"];
+        }
+        fields.addEventListener("input", updateDrawingAttributes);
 
         function showDrawingPreview() {
           renderRoadGeometryAddPreview(draft);
@@ -18826,6 +18851,7 @@
           undo.disabled = true;
           finish.disabled = true;
           fields.hidden = false;
+          updateDrawingAttributes();
           map.setCursor("");
           drawingToolbar?.querySelector("#geometryEditHelp").replaceChildren("도로번호와 속성을 입력하세요.");
           drawingHelp.textContent = "그린 선형의 도로번호와 속성을 입력하세요.";
@@ -18846,13 +18872,7 @@
           }
           if (draft.addPath.length < 2) return;
 
-          const properties = {
-            "노선번호": number,
-            "구분": fields.elements.kind.value,
-            "차선": fields.elements.lane.value,
-            "도로폭": fields.elements.width.value
-          };
-          normalizeRuralRoadAutoStatus(properties);
+          const properties = getDrawingProperties();
           const feature = {
             type: "Feature",
             properties,
@@ -18917,7 +18937,7 @@
           }
 
           const pendingAtSave = pendingBaseRoadGeoJSON;
-          const savingData = buildCurrentChangedRoadGeoJSON(true);
+          const savingData = validateRoadDataset(buildCurrentChangedRoadGeoJSON(true), true);
           baseSave.disabled = true;
           baseSave.textContent = "저장 중";
 
@@ -26025,7 +26045,7 @@
         '</div>';
       }
 
-      function roadInlineEditAttributes(group, road) {
+      function roadInlineEditAttributes(group, road, newRoad = false) {
         const list = group.propertiesList || [];
         const props = road && road.properties ? road.properties : (list[0] || {});
         const currentStatus = road && road.statusKey
@@ -26048,12 +26068,13 @@
           '</form>';
         }
 
-        return '<form id="roadEditForm" class="popup-inline-edit-form">' +
-          popupEditRow("노선번호", "number", group.number, "text", null, true) +
+        return (newRoad ? '<form id="changedRoadFields" class="popup-inline-edit-form" hidden>' :
+          '<form id="roadEditForm" class="popup-inline-edit-form">') +
+          popupEditRow("노선번호", "number", group.number, "text", null, !newRoad) +
           popupEditRow(
             "구분",
             "gubun",
-            String(props.GUBUN || props["구분"] || getRoadGroupTypeLabel(group)),
+            String(props.GUBUN || props["구분"] || (newRoad ? "리도" : getRoadGroupTypeLabel(group))),
             "select",
             ["면도", "리도", "농도"]
           ) +
@@ -26079,6 +26100,7 @@
             null,
             true
           ) +
+          (newRoad ? '<div class="road-dataset-actions"><button type="submit">변경 도로구간에 추가</button></div>' : "") +
         '</form>';
       }
 
