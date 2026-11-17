@@ -10085,11 +10085,11 @@
       outline.setAttribute("d", path.getAttribute("d") || "");
       outline.setAttribute("transform", path.getAttribute("transform") || "");
       outline.style.cssText = path.style.cssText;
+      outline.toggleAttribute("data-road-square-dash", dash !== 0.5);
       outline.style.fill = "none";
       outline.style.stroke = "white";
-      outline.style.strokeDasharray = "none";
       outline.style.strokeOpacity = "1";
-      outline.style.strokeWidth = width + "px";
+      outline.style.strokeWidth = (width + 4) + "px";
       outline.style.pointerEvents = "none";
       if (outline.nextSibling !== path) path.before(outline);
     }
