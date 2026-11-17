@@ -9,7 +9,13 @@
   <link rel="preload" href="Township%20Boundary.geojson" as="fetch" crossorigin="anonymous">
 
   <style>
-    #baseRoadDatasetRetry[hidden] { display: none; }
+    #baseRoadDatasetRetry[hidden], #changedRoadDrawing[hidden], #changedRoadFields[hidden] { display: none; }
+    #changedRoadDrawing { padding: 8px 0 0; }
+    #changedRoadDrawingHelp { margin: 0 0 8px; font-size: 13px; }
+    #changedRoadFields { display: grid; gap: 6px; margin-top: 8px; }
+    #changedRoadFields label { display: grid; grid-template-columns: 86px minmax(0, 1fr); align-items: center; font-size: 13px; }
+    #changedRoadFields input, #changedRoadFields select { min-width: 0; padding: 5px; }
+    #changedRoadFields button { min-height: 36px; cursor: pointer; }
     #map path[data-road-square-dash] { stroke-linecap: butt !important; }
     * {
       box-sizing: border-box;
@@ -13429,6 +13435,10 @@
       // SDK는 바탕지도 라벨 자체의 DOM/클릭 이벤트를 노출하지 않으므로,
       // 클릭 좌표 반경 내 카카오 Places 결과 중 가장 가까운 장소를 사용함.
       kakao.maps.event.addListener(map, "click", function(event) {
+        if (captureChangedRoadPoint && event?.latLng) {
+          captureChangedRoadPoint(event.latLng);
+          return;
+        }
         // 일반 왼쪽 클릭에서는 지번/장소 팝업을 새로 띄우지 않음.
         // 기존 지번보기 상태가 있으면 팝업과 연속지적도를 함께 종료.
         closeParcelContextMenu();
@@ -18214,6 +18224,7 @@
       let loadedBaseRoadGeoJSON = null;
       let baseRoadLoadState = "loading";
       let pendingBaseRoadGeoJSON = null;
+      let captureChangedRoadPoint = null;
       let pendingChangedRoadGeoJSON = null;
 
       function clearBaseRoadDatasetShapes() {
@@ -18431,7 +18442,8 @@
           const data = pendingBaseRoadGeoJSON || savedBaseRoadData();
           const count = data && Array.isArray(data.features) ? data.features.length : 0;
           baseStatus.textContent = pendingBaseRoadGeoJSON || baseRoadLoadState === "ready"
-            ? (count ? count.toLocaleString("ko-KR") + "개 구간" : "비어 있음")
+            ? (count ? count.toLocaleString("ko-KR") + "개 구간" +
+              (pendingBaseRoadGeoJSON ? " · 저장 전" : "") : "비어 있음")
             : baseRoadLoadState === "error" ? "불러오기 실패" : "불러오는 중";
           document.getElementById("baseRoadDatasetRetry").hidden = baseRoadLoadState !== "error";
         }
@@ -18579,7 +18591,7 @@
         const geojson = buildCurrentChangedRoadGeoJSON();
 
         if (!geojson.features.length) {
-          alert("내보낼 변경 도로구간이 없습니다.");
+          alert("내보낼 기존 도로구간이 없습니다.");
           return;
         }
 
@@ -18599,7 +18611,7 @@
           String(now.getMinutes()).padStart(2, "0");
 
         a.href = url;
-        a.download = "gyeongju_changed_roads_" + stamp + ".geojson";
+        a.download = "gyeongju_existing_roads_" + stamp + ".geojson";
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -18645,7 +18657,7 @@
             '<div class="road-compact-head" data-road-compact-toggle="base" role="button" tabindex="0" aria-expanded="false">' +
               '<label class="road-dataset-check-label">' +
                 '<input id="baseRoadDatasetCheck" type="checkbox" checked>' +
-                '<span>기존 도로구간</span>' +
+                '<span>변경 도로구간</span>' +
               '</label>' +
               '<span id="baseRoadDatasetStatus" class="road-dataset-status">비어 있음</span>' +
               '<span class="road-compact-chevron" aria-hidden="true">›</span>' +
@@ -18655,9 +18667,25 @@
                 '<label class="road-dataset-file-btn">파일 불러오기' +
                   '<input id="baseRoadDatasetFile" type="file" accept=".geojson,.json,application/geo+json,application/json">' +
                 '</label>' +
+                '<button id="drawChangedRoad" type="button">선형 그리기</button>' +
                 '<button id="baseRoadDatasetSave" type="button">저장</button>' +
                 '<button id="baseRoadDatasetRetry" type="button" hidden>다시 불러오기</button>' +
               '</div>' +
+              '<section id="changedRoadDrawing" hidden>' +
+                '<p id="changedRoadDrawingHelp" role="status"></p>' +
+                '<div class="road-dataset-actions">' +
+                  '<button id="changedRoadUndo" type="button">마지막 점 취소</button>' +
+                  '<button id="changedRoadFinish" type="button">그리기 완료</button>' +
+                  '<button id="changedRoadCancel" type="button">취소</button>' +
+                '</div>' +
+                '<form id="changedRoadFields" hidden>' +
+                  '<label>도로번호<input name="number" required maxlength="80"></label>' +
+                  '<label>도로구분<select name="kind"><option>면도</option><option selected>리도</option><option>농도</option></select></label>' +
+                  '<label>차선 수<input name="lane" type="number" min="0" step="1"></label>' +
+                  '<label>도로폭(m)<input name="width" type="number" min="0" step="any"></label>' +
+                  '<button type="submit">변경 도로구간에 추가</button>' +
+                '</form>' +
+              '</section>' +
             '</div>' +
           '</div>' +
 
@@ -18665,7 +18693,7 @@
             '<div class="road-compact-head" data-road-compact-toggle="changed" role="button" tabindex="0" aria-expanded="false">' +
               '<label class="road-dataset-check-label">' +
                 '<input id="changedRoadDatasetCheck" type="checkbox" checked>' +
-                '<span>변경 도로구간</span>' +
+                '<span>기존 도로구간</span>' +
               '</label>' +
               '<span id="changedRoadDatasetStatus" class="road-dataset-status">현재 데이터</span>' +
               '<span class="road-compact-chevron" aria-hidden="true">›</span>' +
@@ -18688,6 +18716,7 @@
           roadPage.insertBefore(manager, roadPage.firstChild);
         }
 
+        manager.querySelector('[data-dataset="base"]').before(manager.querySelector('[data-dataset="changed"]'));
         const baseCheck = document.getElementById("baseRoadDatasetCheck");
         const changedCheck = document.getElementById("changedRoadDatasetCheck");
         const baseFile = document.getElementById("baseRoadDatasetFile");
@@ -18717,6 +18746,7 @@
           head.setAttribute("aria-expanded", open ? "true" : "false");
           body.hidden = !open;
           card.classList.toggle("expanded", open);
+          if (name === "base" && !open) cancelDrawing();
         }
 
         manager.querySelectorAll("[data-road-compact-toggle]").forEach(function(head) {
@@ -18839,13 +18869,114 @@
           setChangedRoadDatasetVisible(this.checked);
         });
 
+        const drawing = document.getElementById("changedRoadDrawing");
+        const drawingHelp = document.getElementById("changedRoadDrawingHelp");
+        const fields = document.getElementById("changedRoadFields");
+        const undo = document.getElementById("changedRoadUndo");
+        const finish = document.getElementById("changedRoadFinish");
+        const draft = { addPath: [] };
+
+        function showDrawingPreview() {
+          renderRoadGeometryAddPreview(draft);
+          const count = draft.addPath.length;
+          undo.disabled = count === 0;
+          finish.disabled = count < 2;
+          drawingHelp.textContent = "지도에서 점을 차례로 클릭하세요. " + count + "개 점을 그렸습니다.";
+        }
+
+        function cancelDrawing() {
+          captureChangedRoadPoint = null;
+          clearRoadGeometryAddPreview(draft);
+          draft.addPath = [];
+          drawing.hidden = true;
+          fields.hidden = true;
+          fields.reset();
+        }
+
+        document.getElementById("drawChangedRoad").addEventListener("click", function() {
+          if (roadEditSessionGroupKey || measureMode || roadWidthMeasureMode || roadviewMode) {
+            alert("지도에서 진행 중인 작업을 종료한 뒤 선형을 그려 주세요.");
+            return;
+          }
+          if (baseSave.disabled || (!pendingBaseRoadGeoJSON && baseRoadLoadState !== "ready")) {
+            alert("변경 도로구간을 불러온 뒤 선형을 그려 주세요.");
+            return;
+          }
+          if (!drawing.hidden) return;
+          closeRoadPopup();
+          clearSelectedRoadHighlight();
+          drawing.hidden = false;
+          captureChangedRoadPoint = function(point) {
+            const previous = draft.addPath[draft.addPath.length - 1];
+            if (previous && previous.getLng() === point.getLng() && previous.getLat() === point.getLat()) return;
+            draft.addPath.push(point);
+            showDrawingPreview();
+          };
+          showDrawingPreview();
+        });
+
+        undo.addEventListener("click", function() {
+          draft.addPath.pop();
+          showDrawingPreview();
+        });
+        finish.addEventListener("click", function() {
+          captureChangedRoadPoint = null;
+          undo.disabled = true;
+          finish.disabled = true;
+          fields.hidden = false;
+          drawingHelp.textContent = "그린 선형의 도로번호와 속성을 입력하세요.";
+          fields.elements.number.focus();
+        });
+        document.getElementById("changedRoadCancel").addEventListener("click", cancelDrawing);
+        document.addEventListener("keydown", function(event) {
+          if (event.key === "Escape" && !drawing.hidden) cancelDrawing();
+        });
+
+        fields.addEventListener("submit", function(event) {
+          event.preventDefault();
+          const number = fields.elements.number.value.trim();
+          if (!number || number === "-") {
+            drawingHelp.textContent = "도로번호를 입력하세요.";
+            fields.elements.number.focus();
+            return;
+          }
+          if (draft.addPath.length < 2) return;
+
+          const properties = {
+            "노선번호": number,
+            "구분": fields.elements.kind.value,
+            "차선": fields.elements.lane.value,
+            "도로폭": fields.elements.width.value
+          };
+          normalizeRuralRoadAutoStatus(properties);
+          const feature = {
+            type: "Feature",
+            properties,
+            geometry: {
+              type: "LineString",
+              coordinates: draft.addPath.map(point => [point.getLng(), point.getLat()])
+            }
+          };
+
+          const data = pendingBaseRoadGeoJSON || loadedBaseRoadGeoJSON;
+          pendingBaseRoadGeoJSON = {
+            ...data,
+            type: "FeatureCollection",
+            features: [...(data?.features || []), feature]
+          };
+          cancelDrawing();
+          baseCheck.checked = true;
+          setBaseRoadDatasetVisible(true);
+          drawBaseRoadDataset(pendingBaseRoadGeoJSON);
+        });
+
         baseFile.addEventListener("change", async function() {
           try {
             pendingBaseRoadGeoJSON = await readRoadGeoJSONFile(this.files && this.files[0]);
             drawBaseRoadDataset(pendingBaseRoadGeoJSON);
             updateRoadDatasetManagerStatus();
           } catch (error) {
-            alert("기존 도로구간 파일을 불러오지 못했습니다.\\n\\n" + error.message);
+            alert("변경 도로구간 파일을 불러오지 못했습니다.\\n\\n" + error.message);
             this.value = "";
           }
         });
@@ -18857,7 +18988,7 @@
           } catch (error) {
             pendingChangedRoadGeoJSON = null;
             updateRoadDatasetManagerStatus();
-            alert("변경 도로구간 파일을 불러오지 못했습니다.\\n\\n" + error.message);
+            alert("기존 도로구간 파일을 불러오지 못했습니다.\\n\\n" + error.message);
             this.value = "";
           }
         });
@@ -18870,7 +19001,7 @@
 
         baseSave.addEventListener("click", async function() {
           if (!pendingBaseRoadGeoJSON) {
-            alert("먼저 기존 도로구간 GeoJSON 파일을 불러와 주세요.");
+            alert("먼저 변경 도로구간을 그리거나 GeoJSON 파일을 불러와 주세요.");
             return;
           }
 
@@ -18881,6 +19012,7 @@
             return;
           }
 
+          const savingData = pendingBaseRoadGeoJSON;
           baseSave.disabled = true;
           baseSave.textContent = "저장 중";
 
@@ -18891,25 +19023,25 @@
 
             await overwriteGithubRoadFile(
               GYEONGJU_GITHUB.basePath,
-              pendingBaseRoadGeoJSON,
+              savingData,
               token,
-              "Update original road segments"
+              "Save proposed road segments"
             );
 
-            loadedBaseRoadGeoJSON = pendingBaseRoadGeoJSON;
+            loadedBaseRoadGeoJSON = savingData;
             baseRoadLoadState = "ready";
-            pendingBaseRoadGeoJSON = null;
-            drawBaseRoadDataset(loadedBaseRoadGeoJSON);
+            if (pendingBaseRoadGeoJSON === savingData) pendingBaseRoadGeoJSON = null;
+            drawBaseRoadDataset(pendingBaseRoadGeoJSON || loadedBaseRoadGeoJSON);
             updateRoadDatasetManagerStatus();
 
             alert(
-              "기존 도로구간을 GitHub의 " +
+              "변경 도로구간을 GitHub의 " +
               GYEONGJU_GITHUB.basePath +
               " 파일로 저장했습니다."
             );
           } catch (error) {
             console.error(error);
-            alert("기존 도로구간 GitHub 저장에 실패했습니다.\\n\\n" + error.message);
+            alert("변경 도로구간 GitHub 저장에 실패했습니다.\\n\\n" + error.message);
           } finally {
             baseSave.disabled = false;
             baseSave.textContent = "저장";
@@ -18918,7 +19050,7 @@
 
         changedSave.addEventListener("click", async function() {
           if (!pendingChangedRoadGeoJSON) {
-            alert("먼저 변경 도로구간 GeoJSON 파일을 불러와 주세요.");
+            alert("먼저 기존 도로구간 GeoJSON 파일을 불러와 주세요.");
             return;
           }
 
@@ -18943,7 +19075,7 @@
               GYEONGJU_GITHUB.changedPath,
               replacingData,
               token,
-              "Replace changed road segments"
+              "Replace existing road segments"
             );
 
             // 서버 기존 roads.geojson의 내용은 합치지 않고 새 파일 전체로 교체.
@@ -18953,14 +19085,14 @@
             await replaceChangedRoadDatasetNow(replacingData);
 
             alert(
-              "변경 도로구간 저장 완료\\n\\n" +
+              "기존 도로구간 저장 완료\\n\\n" +
               "GitHub의 " + GYEONGJU_GITHUB.changedPath +
               " 파일을 새 데이터로 완전히 교체했습니다.\\n" +
               "현재 지도에도 바로 반영했습니다."
             );
           } catch (error) {
             console.error(error);
-            alert("변경 도로구간 GitHub 저장에 실패했습니다.\\n\\n" + error.message);
+            alert("기존 도로구간 GitHub 저장에 실패했습니다.\\n\\n" + error.message);
           } finally {
             changedSave.disabled = false;
             changedSave.textContent = "저장";
@@ -19257,6 +19389,11 @@
           hitLine,
           "click",
           function(event) {
+            if (captureChangedRoadPoint && event?.latLng) {
+              kakao.maps.event.preventMap();
+              captureChangedRoadPoint(event.latLng);
+              return;
+            }
             if (roadWidthMeasureMode) {
               kakao.maps.event.preventMap();
               measureRoadWidthAt(event.latLng, road);
