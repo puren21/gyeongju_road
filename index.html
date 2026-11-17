@@ -19843,9 +19843,9 @@
                     0,
                     Math.min(100, Number(config.opacity) || 0)
                   ) / 100,
-              // 색상만 선택구간 빨강/나머지 파랑으로 바꾸고,
-              // 개설/미개설/계획의 solid/dash/dot은 그대로 유지함.
-              strokeStyle: getRoadLayerStrokeStyle(road, config, index),
+              strokeStyle: enabled
+                ? "solid"
+                : getRoadLayerStrokeStyle(road, config, index),
               zIndex: enabled ? 90 - index : 40 - index
             });
           });
