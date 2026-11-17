@@ -4312,11 +4312,11 @@
 
     #listBottomResizeHandle {
       position: absolute;
-      right: 0;
-      bottom: -5px;
-      left: 0;
-      z-index: 40;
-      height: 12px;
+      bottom: 0;
+      left: 20px;
+      right: 20px;
+      z-index: 100;
+      height: 18px;
       cursor: ns-resize;
       touch-action: none;
     }
@@ -26384,10 +26384,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
           return safe(properties.number);
         }
 
-        return safe(
-          properties.number ||
-          properties.NUM
-        );
+        const number = safe(properties.number || properties.NUM || properties["노선번호"]);
+        return number === "현고304" ? "현곡304" : number;
       }
 
       function getColor(properties, layerId) {
@@ -27083,7 +27081,7 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
 
   const bottomHandle = document.createElement("div");
   bottomHandle.id = "listBottomResizeHandle";
-  bottomHandle.title = "아래로 드래그하여 메뉴 높이 조절";
+  bottomHandle.title = "위아래로 드래그하여 메뉴 높이 조절";
   bottomHandle.setAttribute("aria-label", "메뉴 높이 조절");
   panel.appendChild(bottomHandle);
 
@@ -27118,6 +27116,7 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
     const rect = panel.getBoundingClientRect();
     const maxHeight = Math.max(230, window.innerHeight - rect.top - 8);
     const nextHeight = clamp(height, 230, maxHeight);
+    panel.style.setProperty("max-height", "none", "important");
     panel.style.setProperty("height", nextHeight + "px", "important");
     if (save) {
       try { localStorage.setItem("roadListFloatHeight", String(Math.round(nextHeight))); } catch (e) {}
@@ -27194,6 +27193,7 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
   }
   bottomHandle.addEventListener("pointerup", finishResize);
   bottomHandle.addEventListener("pointercancel", finishResize);
+  bottomHandle.addEventListener("lostpointercapture", finishResize);
 
   window.addEventListener("resize", function() {
     if (!desktopMedia.matches) return;
