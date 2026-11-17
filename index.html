@@ -27801,9 +27801,19 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#111;font-f
   function positionLegend() {
     frame = null;
     legend.style.bottom = "";
-    if (window.innerWidth > 700) return;
+    legend.style.left = "";
     const panelBox = panel.getBoundingClientRect();
     const legendBox = legend.getBoundingClientRect();
+    if (window.innerWidth > 700) {
+      const overlaps = panelBox.left < legendBox.right &&
+        panelBox.right > legendBox.left && panelBox.top < legendBox.bottom &&
+        panelBox.bottom > legendBox.top;
+      const left = Math.ceil(panelBox.right) + 10;
+      if (overlaps && left + legendBox.width <= window.innerWidth) {
+        legend.style.left = left + "px";
+      }
+      return;
+    }
     if (panelBox.width && panelBox.height && panelBox.top > window.innerHeight / 3 &&
         panelBox.left < legendBox.right && panelBox.right > legendBox.left &&
         panelBox.bottom > legendBox.top) {
